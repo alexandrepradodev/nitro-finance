@@ -4,6 +4,7 @@ from app.models.company import Company
 from app.models.category import Category
 from app.models.department import Department
 from app.models.user import User, UserRole
+from app.models.expense import Expense, ExpenseType, Currency, Periodicity, PaymentMethod, ExpenseStatus
 
 __all__ = [
     "BaseModel",
@@ -14,4 +15,10 @@ __all__ = [
     "Department",
     "User",
     "UserRole",
+    "Expense",
+    "ExpenseType",
+    "Currency",
+    "Periodicity",
+    "PaymentMethod",
+    "ExpenseStatus",
 ]
