@@ -4,7 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.deps import require_roles
+from app.core.deps import require_roles, get_current_user
+from app.core.permissions import _role_value
 from app.models.user import User, UserRole
 from app.schemas.company import CompanyCreate, CompanyUpdate, CompanyResponse
 from app.services import company_service
@@ -13,6 +14,24 @@ router = APIRouter(prefix="/companies", tags=["Companies"])
 
 # Apenas admins podem gerenciar empresas
 admin_only = require_roles([UserRole.FINANCE_ADMIN, UserRole.SYSTEM_ADMIN])
+
+
+@router.get("/me", response_model=list[CompanyResponse])
+def get_my_companies(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Retorna empresas do escopo do usuário logado"""
+    role_val = _role_value(current_user.role)
+    if role_val in (UserRole.SYSTEM_ADMIN.value, UserRole.FINANCE_ADMIN.value):
+        # System Admin e Finance Admin têm acesso a tudo
+        return company_service.get_all(db)
+    elif role_val == UserRole.LEADER.value:
+        company_ids = [c.id for c in current_user.companies] if current_user.companies else []
+        if not company_ids:
+            return []
+        return [c for c in company_service.get_all(db) if c.id in company_ids]
+    return []
 
 
 @router.get("", response_model=list[CompanyResponse])

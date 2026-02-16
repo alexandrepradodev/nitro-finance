@@ -9,9 +9,10 @@ class UserCreate(BaseModel):
     name: str
     email: EmailStr
     password: str
-    role: UserRole = UserRole.USER
+    role: UserRole = UserRole.LEADER
     phone: str | None = None
     department_ids: list[UUID] = []
+    company_ids: list[UUID] = []
 
 
 class UserUpdate(BaseModel):
@@ -22,6 +23,7 @@ class UserUpdate(BaseModel):
     phone: str | None = None
     is_active: bool | None = None
     department_ids: list[UUID] | None = None
+    company_ids: list[UUID] | None = None
 
 
 class UserResponse(BaseModel):
@@ -36,6 +38,14 @@ class UserResponse(BaseModel):
         from_attributes = True
 
 
+class CompanyBasicResponse(BaseModel):
+    id: UUID
+    name: str
+
+    class Config:
+        from_attributes = True
+
+
 class UserWithDepartmentsResponse(BaseModel):
     id: UUID
     name: str
@@ -44,6 +54,7 @@ class UserWithDepartmentsResponse(BaseModel):
     phone: str | None
     is_active: bool
     departments: list["DepartmentBasicResponse"] = []
+    companies: list["CompanyBasicResponse"] = []
 
     class Config:
         from_attributes = True

@@ -5,6 +5,7 @@ from decimal import Decimal
 from pydantic import BaseModel, ConfigDict
 
 from app.models.expense import ExpenseType, Currency, Periodicity, PaymentMethod, ExpenseStatus
+from app.models.expense_validation import ValidationStatus
 
 
 class ExpenseCreate(BaseModel):
@@ -91,8 +92,21 @@ class ExpenseResponse(BaseModel):
     status: ExpenseStatus
     cancellation_month: date | None = None
     charged_when_cancelled: bool | None = None
+    created_by_id: UUID | None = None
+    cancelled_at: datetime | None = None
+    cancelled_by_id: UUID | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class ExpenseValidationLogItem(BaseModel):
+    """Item de log para histórico de validações da despesa."""
+    validation_month: date
+    status: ValidationStatus
+    validated_at: datetime | None = None
+    validator: "UserBasic | None" = None
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ExpenseWithRelationsResponse(ExpenseResponse):
@@ -101,9 +115,12 @@ class ExpenseWithRelationsResponse(ExpenseResponse):
     department: "DepartmentBasic"
     owner: "UserBasic"
     approver: "UserBasic"
+    created_by: "UserBasic | None" = None
+    cancelled_at: datetime | None = None
+    cancelled_by: "UserBasic | None" = None
+    validations: list[ExpenseValidationLogItem] = []
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class CategoryBasic(BaseModel):

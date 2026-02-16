@@ -1,10 +1,11 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.deps import require_roles
+from app.core.deps import require_roles, get_current_user
 from app.models.user import User, UserRole
 from app.schemas.category import CategoryCreate, CategoryUpdate, CategoryResponse
 from app.services import category_service
@@ -13,6 +14,15 @@ router = APIRouter(prefix="/categories", tags=["Categories"])
 
 # Apenas admins podem gerenciar categorias
 admin_only = require_roles([UserRole.FINANCE_ADMIN, UserRole.SYSTEM_ADMIN])
+
+
+@router.get("/me", response_model=list[CategoryResponse])
+def get_my_categories(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Retorna todas as categorias (dados de referência para qualquer usuário autenticado)"""
+    return category_service.get_all(db)
 
 
 @router.get("", response_model=list[CategoryResponse])
@@ -57,7 +67,20 @@ def create_category(
             detail="Já existe uma categoria com este nome"
         )
     
-    return category_service.create(db, data)
+    try:
+        return category_service.create(db, data)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Já existe uma categoria com este nome"
+        )
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erro ao criar categoria: {str(e)}"
+        )
 
 
 @router.put("/{category_id}", response_model=CategoryResponse)

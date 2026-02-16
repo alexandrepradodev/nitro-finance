@@ -6,6 +6,7 @@ from sqlalchemy import and_
 
 from app.models.expense_validation import ExpenseValidation, ValidationStatus
 from app.models.expense import Expense, ExpenseStatus, ExpenseType, Periodicity
+from app.models.user import User, UserRole
 from app.schemas.expense_validation import ExpenseValidationCreate
 
 
@@ -130,14 +131,35 @@ def create_monthly_validations(db: Session, month_date: date) -> list[ExpenseVal
     return validations
 
 
+def _role_value(role) -> str:
+    """Normaliza role para string (enum ou string do DB)."""
+    return role.value if hasattr(role, "value") else str(role)
+
+
+def _validation_scope_filters(query, current_user: User):
+    """Aplica filtro de escopo por role (empresa + owner/created_by)."""
+    rv = _role_value(current_user.role)
+    if rv in (UserRole.SYSTEM_ADMIN.value, UserRole.FINANCE_ADMIN.value):
+        # System Admin e Finance Admin têm acesso total
+        return query
+    query = query.join(Expense, ExpenseValidation.expense_id == Expense.id)
+    if rv == UserRole.LEADER.value:
+        company_ids = [c.id for c in current_user.companies] if current_user.companies else []
+        if not company_ids:
+            return query.filter(False)
+        return query.filter(
+            Expense.company_id.in_(company_ids)
+        )
+    return query.filter(Expense.created_by_id == current_user.id)
+
+
 def get_pending(
-    db: Session, 
-    month: date | None = None
+    db: Session,
+    month: date | None = None,
+    current_user: User | None = None
 ) -> list[ExpenseValidation]:
     """
-    Lista todas validações pendentes.
-    Qualquer usuário autenticado pode ver todas as pendentes.
-    Se month for None, retorna todas as pendências.
+    Lista validações pendentes. Se current_user for informado, filtra pelo escopo do role.
     """
     query = db.query(ExpenseValidation).options(
         joinedload(ExpenseValidation.expense).subqueryload(Expense.company),
@@ -147,11 +169,11 @@ def get_pending(
     ).filter(
         ExpenseValidation.status == ValidationStatus.PENDING
     )
-    
+    if current_user:
+        query = _validation_scope_filters(query, current_user)
     if month:
         first_day = month.replace(day=1)
         query = query.filter(ExpenseValidation.validation_month == first_day)
-    
     return query.order_by(ExpenseValidation.validation_month.desc()).all()
 
 
@@ -266,10 +288,13 @@ def reject(
     validation.validated_at = datetime.now(timezone.utc)
     validation.updated_at = datetime.now(timezone.utc)
 
+    now = datetime.now(timezone.utc)
     expense.status = ExpenseStatus.CANCELLED
     expense.cancellation_month = validation.validation_month
     expense.charged_when_cancelled = charged_this_month
-    expense.updated_at = datetime.now(timezone.utc)
+    expense.cancelled_at = now
+    expense.cancelled_by_id = validator_id
+    expense.updated_at = now
 
     db.commit()
     db.refresh(validation)
@@ -280,11 +305,11 @@ def get_history(
     db: Session,
     status: ValidationStatus | None = None,
     month: date | None = None,
-    expense_id: UUID | None = None
+    expense_id: UUID | None = None,
+    current_user: User | None = None
 ) -> list[ExpenseValidation]:
     """
-    Lista histórico completo de validações.
-    Filtros opcionais: status, mês, despesa.
+    Lista histórico de validações. Se current_user for informado, filtra pelo escopo do role.
     """
     query = db.query(ExpenseValidation).options(
         joinedload(ExpenseValidation.expense).subqueryload(Expense.company),
@@ -292,17 +317,15 @@ def get_history(
         joinedload(ExpenseValidation.expense).subqueryload(Expense.owner),
         joinedload(ExpenseValidation.validator)
     )
-    
+    if current_user:
+        query = _validation_scope_filters(query, current_user)
     if status:
         query = query.filter(ExpenseValidation.status == status)
-    
     if month:
         first_day = month.replace(day=1)
         query = query.filter(ExpenseValidation.validation_month == first_day)
-    
     if expense_id:
         query = query.filter(ExpenseValidation.expense_id == expense_id)
-    
     return query.order_by(ExpenseValidation.validation_month.desc(), ExpenseValidation.created_at.desc()).all()
 
 
@@ -315,20 +338,24 @@ def get_all_for_expense(db: Session, expense_id: UUID) -> list[ExpenseValidation
 
 def get_predicted_validations(
     db: Session,
-    target_month: date
+    target_month: date,
+    current_user: User | None = None
 ) -> list[dict]:
     """
     Retorna validações previstas para um mês futuro.
     Não cria registros no banco, apenas calcula quais despesas teriam validação.
     IMPORTANTE: Apenas despesas com status ACTIVE são consideradas.
     Despesas canceladas (CANCELLED) ou com outros status não aparecem.
+    Se current_user for informado, filtra pelo escopo do role.
     Retorna lista de dicionários com dados da despesa e mês previsto.
     """
+    from app.core.permissions import get_expense_scope_params
+    
     first_day = target_month.replace(day=1)
     
     # Buscar APENAS despesas recorrentes ATIVAS (não canceladas)
     # Filtro explícito: status == ACTIVE garante que canceladas não aparecem
-    active_expenses = db.query(Expense).options(
+    query = db.query(Expense).options(
         joinedload(Expense.category),
         joinedload(Expense.company),
         joinedload(Expense.department),
@@ -337,7 +364,29 @@ def get_predicted_validations(
     ).filter(
         Expense.status == ExpenseStatus.ACTIVE,  # Apenas ativas
         Expense.expense_type == ExpenseType.RECURRING
-    ).all()
+    )
+    
+    # Aplicar filtros de escopo se current_user for fornecido
+    if current_user:
+        scope = get_expense_scope_params(current_user)
+        scope_company_ids = scope["company_ids"]
+        scope_owner_ids = scope["owner_ids"]
+        scope_department_ids = scope.get("department_ids")
+        
+        # Se company_ids está vazio, retornar lista vazia
+        if scope_company_ids is not None and len(scope_company_ids) == 0:
+            return []
+        
+        # Aplicar filtros de escopo
+        # Para líder, apenas company_ids é filtrado (owner_ids e department_ids são None)
+        if scope_company_ids is not None:
+            query = query.filter(Expense.company_id.in_(scope_company_ids))
+        if scope_owner_ids is not None:
+            query = query.filter(Expense.owner_id.in_(scope_owner_ids))
+        if scope_department_ids is not None:
+            query = query.filter(Expense.department_id.in_(scope_department_ids))
+    
+    active_expenses = query.all()
     
     predicted = []
     

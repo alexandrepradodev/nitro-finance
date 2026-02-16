@@ -101,6 +101,9 @@ class Expense(Base, BaseModel):
     )
     cancellation_month = Column(Date, nullable=True)  # Primeiro dia do mês em que foi cancelada
     charged_when_cancelled = Column(Boolean, nullable=True)  # True = valor do mês conta no dashboard
+    created_by_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    cancelled_at = Column(DateTime(timezone=True), nullable=True)
+    cancelled_by_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
 
     # Relacionamentos ORM
     category = relationship("Category")
@@ -108,4 +111,6 @@ class Expense(Base, BaseModel):
     department = relationship("Department")
     owner = relationship("User", foreign_keys=[owner_id])
     approver = relationship("User", foreign_keys=[approver_id])
+    created_by = relationship("User", foreign_keys=[created_by_id])
+    cancelled_by = relationship("User", foreign_keys=[cancelled_by_id])
     validations = relationship("ExpenseValidation", back_populates="expense")

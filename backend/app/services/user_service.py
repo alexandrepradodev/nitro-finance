@@ -1,21 +1,29 @@
 from uuid import UUID
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload, subqueryload
 
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.models.department import Department
+from app.models.company import Company
 from app.schemas.user import UserCreate, UserUpdate
 from app.core.security import hash_password
 
 
 def get_all(db: Session) -> list[User]:
-    """Lista todos os usuários"""
-    return db.query(User).all()
+    """Lista todos os usuários com departments e companies."""
+    # Usar subqueryload para relacionamentos many-to-many evita duplicatas
+    return db.query(User).options(
+        subqueryload(User.departments),
+        subqueryload(User.companies),
+    ).all()
 
 
 def get_by_id(db: Session, user_id: UUID) -> User | None:
-    """Busca usuário por ID"""
-    return db.query(User).filter(User.id == user_id).first()
+    """Busca usuário por ID com departments e companies."""
+    return db.query(User).options(
+        subqueryload(User.departments),
+        subqueryload(User.companies),
+    ).filter(User.id == user_id).first()
 
 
 def get_by_email(db: Session, email: str) -> User | None:
@@ -33,12 +41,17 @@ def create(db: Session, data: UserCreate) -> User:
         phone=data.phone,
     )
     
-    # Vincula aos departamentos
     if data.department_ids:
         departments = db.query(Department).filter(
             Department.id.in_(data.department_ids)
         ).all()
         user.departments = departments
+
+    if data.company_ids and data.role in (UserRole.LEADER, UserRole.FINANCE_ADMIN):
+        companies = db.query(Company).filter(
+            Company.id.in_(data.company_ids)
+        ).all()
+        user.companies = companies
     
     db.add(user)
     db.commit()
@@ -61,12 +74,19 @@ def update(db: Session, user: User, data: UserUpdate) -> User:
     if data.is_active is not None:
         user.is_active = data.is_active
     
-    # Atualiza departamentos
     if data.department_ids is not None:
         departments = db.query(Department).filter(
             Department.id.in_(data.department_ids)
         ).all()
         user.departments = departments
+
+    if data.company_ids is not None and user.role in (UserRole.LEADER, UserRole.FINANCE_ADMIN):
+        companies = db.query(Company).filter(
+            Company.id.in_(data.company_ids)
+        ).all()
+        user.companies = companies
+    elif data.role is not None and data.role not in (UserRole.LEADER, UserRole.FINANCE_ADMIN):
+        user.companies = []
     
     db.commit()
     db.refresh(user)

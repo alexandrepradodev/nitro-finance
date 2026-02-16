@@ -5,6 +5,7 @@ from datetime import datetime, timezone, date
 from sqlalchemy.orm import Session, joinedload
 
 from app.models.expense import Expense, Currency, ExpenseStatus, ExpenseType
+from app.models.expense_validation import ExpenseValidation
 from app.schemas.expense import ExpenseCreate, ExpenseUpdate
 
 
@@ -39,11 +40,12 @@ def get_filtered(
     company_ids: list[UUID] | None = None,
     department_ids: list[UUID] | None = None,
     owner_ids: list[UUID] | None = None,
+    created_by_id: UUID | None = None,
     category_ids: list[UUID] | None = None,
     statuses: list[ExpenseStatus] | None = None,
     expense_types: list[ExpenseType] | None = None,
 ) -> list[Expense]:
-    """Lista despesas com filtros opcionais (listas). Lista vazia/None = não filtra nesse eixo."""
+    """Lista despesas com filtros opcionais (listas). Lista vazia = nenhum resultado, None = não filtra."""
     query = db.query(Expense).options(
         joinedload(Expense.category),
         joinedload(Expense.company),
@@ -51,30 +53,49 @@ def get_filtered(
         joinedload(Expense.owner),
         joinedload(Expense.approver),
     )
-    if company_ids:
+    
+    # Tratar company_ids: lista vazia = nenhum resultado
+    if company_ids is not None:
+        if len(company_ids) == 0:
+            return []
         query = query.filter(Expense.company_id.in_(company_ids))
-    if department_ids:
+    
+    # Tratar department_ids: lista vazia = nenhum resultado
+    if department_ids is not None:
+        if len(department_ids) == 0:
+            return []
         query = query.filter(Expense.department_id.in_(department_ids))
-    if owner_ids:
+    
+    # Tratar owner_ids: lista vazia = nenhum resultado
+    if owner_ids is not None:
+        if len(owner_ids) == 0:
+            return []
         query = query.filter(Expense.owner_id.in_(owner_ids))
+    
+    if created_by_id is not None:
+        query = query.filter(Expense.created_by_id == created_by_id)
     if category_ids:
         query = query.filter(Expense.category_id.in_(category_ids))
     if statuses:
         query = query.filter(Expense.status.in_(statuses))
     if expense_types:
         query = query.filter(Expense.expense_type.in_(expense_types))
+    query = query.order_by(Expense.created_at.desc())
     return query.all()
 
 
 def get_by_id(db: Session, expense_id: UUID) -> Expense | None:
-    """Busca despesa por ID com relacionamentos"""
+    """Busca despesa por ID com relacionamentos (inclui validations e validator para histórico)."""
     return db.query(Expense)\
         .options(
             joinedload(Expense.category),
             joinedload(Expense.company),
             joinedload(Expense.department),
             joinedload(Expense.owner),
-            joinedload(Expense.approver)
+            joinedload(Expense.approver),
+            joinedload(Expense.created_by),
+            joinedload(Expense.cancelled_by),
+            joinedload(Expense.validations).joinedload(ExpenseValidation.validator),
         )\
         .filter(Expense.id == expense_id)\
         .first()
@@ -141,7 +162,8 @@ def create(
     data: ExpenseCreate,
     value_brl: Decimal,
     exchange_rate: Decimal | None = None,
-    exchange_rate_date: datetime | None = None
+    exchange_rate_date: datetime | None = None,
+    created_by_id: UUID | None = None,
 ) -> Expense:
     """Cria nova despesa"""
     code = _next_expense_code(db)
@@ -171,6 +193,7 @@ def create(
         password=data.password,
         notes=data.notes,
         status=ExpenseStatus.ACTIVE,
+        created_by_id=created_by_id,
     )
     db.add(expense)
     db.commit()
@@ -256,6 +279,7 @@ def cancel_with_info(
     expense: Expense,
     charged_this_month: bool,
     cancellation_month: date | None = None,
+    cancelled_by_id: UUID | None = None,
 ) -> Expense:
     """Cancela despesa registrando mês e se o valor do mês deve contar no dashboard."""
     now = datetime.now(timezone.utc)
@@ -264,6 +288,8 @@ def cancel_with_info(
     expense.status = ExpenseStatus.CANCELLED
     expense.cancellation_month = cancellation_month
     expense.charged_when_cancelled = charged_this_month
+    expense.cancelled_at = now
+    expense.cancelled_by_id = cancelled_by_id
     expense.updated_at = now
     db.commit()
     db.refresh(expense)

@@ -131,7 +131,7 @@ def ensure_basic_data(db: Session, skip_existing: bool = False) -> dict:
     users_data = [
         {"name": "Admin Finance", "email": "admin@nitro.com", "role": UserRole.FINANCE_ADMIN, "password": "admin123"},
         {"name": "Líder Tech", "email": "leader@nitro.com", "role": UserRole.LEADER, "password": "leader123"},
-        {"name": "Usuário Teste", "email": "user@nitro.com", "role": UserRole.USER, "password": "user123"},
+        {"name": "Líder Teste", "email": "user@nitro.com", "role": UserRole.LEADER, "password": "user123"},
     ]
     
     for user_data in users_data:

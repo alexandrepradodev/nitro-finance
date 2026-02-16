@@ -1,10 +1,11 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, subqueryload
 
 from app.core.database import get_db
 from app.core.deps import get_current_user, require_roles
+from app.core.permissions import _role_value
 from app.models.user import User, UserRole
 from app.schemas.user import UserCreate, UserUpdate, UserResponse, UserWithDepartmentsResponse
 from app.services import user_service
@@ -19,6 +20,41 @@ admin_only = require_roles([UserRole.FINANCE_ADMIN, UserRole.SYSTEM_ADMIN])
 def get_me(current_user: User = Depends(get_current_user)):
     """Retorna os dados do usuário logado"""
     return current_user
+
+
+@router.get("/scoped", response_model=list[UserWithDepartmentsResponse])
+def get_scoped_users(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Retorna usuários do escopo do usuário logado (para filtros de responsável)"""
+    from app.models.user_company import user_companies
+    
+    role_val = _role_value(current_user.role)
+    
+    if role_val in (UserRole.SYSTEM_ADMIN.value, UserRole.FINANCE_ADMIN.value):
+        # System Admin e Finance Admin veem todos os líderes e admins
+        all_users = user_service.get_all(db)
+        return [u for u in all_users if u.is_active and u.role in (UserRole.LEADER, UserRole.FINANCE_ADMIN, UserRole.SYSTEM_ADMIN)]
+    elif role_val == UserRole.LEADER.value:
+        # Leader vê usuários que compartilham pelo menos uma empresa com ele
+        company_ids = [c.id for c in current_user.companies] if current_user.companies else []
+        if not company_ids:
+            return []
+        
+        # Buscar usuários que têm pelo menos uma empresa em comum com o leader
+        users_with_companies = db.query(User).options(
+            subqueryload(User.companies),
+            subqueryload(User.departments),
+        ).join(
+            user_companies, User.id == user_companies.c.user_id
+        ).filter(
+            user_companies.c.company_id.in_(company_ids),
+            User.is_active == True
+        ).distinct().all()
+        
+        return users_with_companies
+    return []
 
 
 @router.get("", response_model=list[UserWithDepartmentsResponse])

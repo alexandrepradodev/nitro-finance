@@ -8,6 +8,12 @@ from sqlalchemy.exc import IntegrityError
 
 from app.core.database import get_db
 from app.core.deps import get_current_user, require_roles
+from app.core.permissions import (
+    get_expense_scope_params,
+    can_access_expense,
+    can_create_expense_in_company,
+    _role_value as _perm_role_value,
+)
 from app.models.user import User, UserRole
 from app.models.expense import ExpenseStatus, ExpenseType
 from app.schemas.expense import ExpenseCreate, ExpenseUpdate, ExpenseResponse, ExpenseWithRelationsResponse, ExpenseCancelRequest
@@ -38,7 +44,7 @@ def list_expenses(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Lista despesas com relacionamentos e filtros múltiplos (admin vê todas, líder vê dos seus setores)."""
+    """Lista despesas com escopo por role (empresa + responsável/created_by)."""
     company_ids = _normalize_list(company_ids)
     department_ids = _normalize_list(department_ids)
     owner_ids = _normalize_list(owner_ids)
@@ -46,48 +52,66 @@ def list_expenses(
     statuses = _normalize_list(status)
     expense_types = _normalize_list(expense_type)
 
-    if current_user.role in [UserRole.FINANCE_ADMIN, UserRole.SYSTEM_ADMIN]:
-        expenses = expense_service.get_filtered(
-            db,
-            company_ids=company_ids,
-            department_ids=department_ids,
-            owner_ids=owner_ids,
-            category_ids=category_ids,
-            statuses=statuses,
-            expense_types=expense_types,
-        )
-        return expenses
+    scope = get_expense_scope_params(current_user)
+    scope_company_ids = scope["company_ids"]
+    scope_owner_ids = scope["owner_ids"]
+    scope_created_by_id = scope["created_by_id"]
+    scope_department_ids = scope.get("department_ids")
 
-    if current_user.role == UserRole.LEADER:
-        user_department_ids = [d.id for d in current_user.departments]
-        if not user_department_ids:
-            return []
-        allowed_department_ids = user_department_ids
-        if department_ids:
-            for dept_id in department_ids:
-                if dept_id not in user_department_ids:
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Você não tem acesso a este setor",
-                    )
-            allowed_department_ids = list(department_ids)
-        expenses = expense_service.get_filtered(
-            db,
-            company_ids=company_ids,
-            department_ids=allowed_department_ids,
-            owner_ids=owner_ids,
-            category_ids=category_ids,
-            statuses=statuses,
-            expense_types=expense_types,
-        )
-        return expenses
+    if scope_company_ids is not None and len(scope_company_ids) == 0:
+        return []
 
-    # Usuário comum: apenas próprias despesas; ignora owner_ids do request
+    # Validar filtros contra escopo do usuário
+    role_val = _perm_role_value(current_user.role)
+    
+    # System Admin e Finance Admin têm acesso a tudo, não precisam validação
+    if role_val in (UserRole.SYSTEM_ADMIN.value, UserRole.FINANCE_ADMIN.value):
+        pass  # Não valida, permite tudo
+    elif role_val == UserRole.LEADER.value:
+        # Para líder, validar apenas que company_ids estão no escopo
+        # department_ids e owner_ids não precisam validação pois líder vê todos das suas empresas
+        if company_ids:
+            invalid_companies = [c for c in company_ids if c not in (scope_company_ids or [])]
+            if invalid_companies:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Você não tem acesso às empresas: {', '.join(str(c) for c in invalid_companies)}"
+                )
+
+    # Aplicar filtros de escopo
+    final_company_ids = scope_company_ids
+    if company_ids:
+        if scope_company_ids is not None:
+            # Intersectar filtros do usuário com escopo
+            final_company_ids = [c for c in company_ids if c in scope_company_ids]
+        elif role_val in (UserRole.SYSTEM_ADMIN.value, UserRole.FINANCE_ADMIN.value):
+            # Admins podem usar qualquer filtro
+            final_company_ids = company_ids
+
+    # Para líder, owner_ids e department_ids não são filtrados pelo escopo (None significa sem filtro)
+    # Para outros roles, aplicar escopo se existir
+    final_owner_ids = owner_ids
+    if owner_ids and scope_owner_ids is not None:
+        # Intersectar filtros do usuário com escopo
+        final_owner_ids = [o for o in owner_ids if o in scope_owner_ids]
+    elif not owner_ids:
+        # Se não há filtro do usuário, usar escopo (pode ser None)
+        final_owner_ids = scope_owner_ids
+
+    final_department_ids = department_ids
+    if department_ids and scope_department_ids is not None:
+        # Intersectar filtros do usuário com escopo
+        final_department_ids = [d for d in department_ids if d in scope_department_ids]
+    elif not department_ids:
+        # Se não há filtro do usuário, usar escopo (pode ser None)
+        final_department_ids = scope_department_ids
+
     expenses = expense_service.get_filtered(
         db,
-        company_ids=company_ids,
-        department_ids=department_ids,
-        owner_ids=[current_user.id],
+        company_ids=final_company_ids,
+        department_ids=final_department_ids,
+        owner_ids=final_owner_ids,
+        created_by_id=scope_created_by_id,
         category_ids=category_ids,
         statuses=statuses,
         expense_types=expense_types,
@@ -109,24 +133,11 @@ def get_expense(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Despesa não encontrada"
         )
-    
-    # Verifica permissão
-    if current_user.role not in [UserRole.FINANCE_ADMIN, UserRole.SYSTEM_ADMIN]:
-        user_department_ids = [d.id for d in current_user.departments]
-        
-        if current_user.role == UserRole.LEADER:
-            if expense.department_id not in user_department_ids:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Você não tem acesso a esta despesa"
-                )
-        else:
-            if expense.owner_id != current_user.id:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Você não tem acesso a esta despesa"
-                )
-    
+    if not can_access_expense(current_user, expense):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Você não tem acesso a esta despesa"
+        )
     return expense
 
 
@@ -134,9 +145,9 @@ def get_expense(
 def create_expense(
     data: ExpenseCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(admin_only)
+    current_user: User = Depends(get_current_user)
 ):
-    """Cria nova despesa"""
+    """Cria nova despesa (qualquer autenticado; responsável deve ser líder ou admin)."""
     
     # Valida categoria
     category = category_service.get_by_id(db, data.category_id)
@@ -162,12 +173,28 @@ def create_expense(
             detail="Setor não encontrado"
         )
     
-    # Valida owner
     owner = user_service.get_by_id(db, data.owner_id)
     if not owner:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Owner não encontrado"
+            detail="Responsável não encontrado"
+        )
+    
+    # Verificar se o responsável pertence à empresa da despesa
+    # System Admin e Finance Admin podem ser responsáveis em qualquer empresa
+    owner_role = _perm_role_value(owner.role)
+    if owner_role not in (UserRole.SYSTEM_ADMIN.value, UserRole.FINANCE_ADMIN.value):
+        owner_company_ids = [c.id for c in owner.companies] if owner.companies else []
+        if data.company_id not in owner_company_ids:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="O responsável selecionado não pertence à empresa escolhida"
+            )
+    
+    if not can_create_expense_in_company(current_user, data.company_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Você não tem permissão para criar despesa nesta empresa"
         )
     # Responsável = validador: se approver_id não vier, usa owner_id
     approver_id = data.approver_id if data.approver_id is not None else data.owner_id
@@ -197,7 +224,8 @@ def create_expense(
             data=data,
             value_brl=value_brl,
             exchange_rate=exchange_rate,
-            exchange_rate_date=exchange_rate_date
+            exchange_rate_date=exchange_rate_date,
+            created_by_id=current_user.id,
         )
         expense_validation_service.create_validation_for_creation_month(db, expense)
         return expense
@@ -220,15 +248,20 @@ def update_expense(
     expense_id: UUID,
     data: ExpenseUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(admin_only)
+    current_user: User = Depends(get_current_user)
 ):
-    """Atualiza despesa"""
+    """Atualiza despesa (quem tem acesso à despesa pode editar)."""
     expense = expense_service.get_by_id(db, expense_id)
     
     if not expense:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Despesa não encontrada"
+        )
+    if not can_access_expense(current_user, expense):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Você não tem acesso a esta despesa"
         )
     
     # Se mudou valor ou moeda, recalcula value_brl
@@ -281,14 +314,19 @@ def cancel_expense(
     expense_id: UUID,
     body: ExpenseCancelRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(admin_only)
+    current_user: User = Depends(get_current_user)
 ):
-    """Cancela despesa com informação se já foi processada no mês (valor conta ou não no dashboard)."""
+    """Cancela despesa (quem tem acesso pode cancelar)."""
     expense = expense_service.get_by_id(db, expense_id)
     if not expense:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Despesa não encontrada"
+        )
+    if not can_access_expense(current_user, expense):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Você não tem acesso a esta despesa"
         )
     cancel_month = body.cancellation_month
     if cancel_month is None:
@@ -297,6 +335,7 @@ def cancel_expense(
         db, expense,
         charged_this_month=body.charged_this_month,
         cancellation_month=cancel_month,
+        cancelled_by_id=current_user.id,
     )
 
 
@@ -304,9 +343,9 @@ def cancel_expense(
 def delete_expense(
     expense_id: UUID,
     db: Session = Depends(get_db),
-    current_user: User = Depends(admin_only)
+    current_user: User = Depends(get_current_user)
 ):
-    """Cancela despesa (soft delete, sem info de cobrança)"""
+    """Desativa despesa (quem tem acesso pode deletar)."""
     expense = expense_service.get_by_id(db, expense_id)
     
     if not expense:
@@ -314,5 +353,9 @@ def delete_expense(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Despesa não encontrada"
         )
-    
+    if not can_access_expense(current_user, expense):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Você não tem acesso a esta despesa"
+        )
     return expense_service.delete(db, expense)

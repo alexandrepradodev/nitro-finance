@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.deps import get_current_user, require_roles
+from app.core.permissions import can_access_expense, can_approve_expense
 from app.models.user import User, UserRole
 from app.schemas.expense_validation import (
     ExpenseValidationResponse,
@@ -32,10 +33,9 @@ def list_pending_validations(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Lista todas validações pendentes.
-    Qualquer usuário autenticado pode ver todas as pendências.
+    Lista validações pendentes no escopo do usuário (empresa + responsável).
     """
-    validations = expense_validation_service.get_pending(db, month)
+    validations = expense_validation_service.get_pending(db, month, current_user=current_user)
     return validations
 
 
@@ -48,11 +48,12 @@ def get_validation_history(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Lista histórico completo de validações.
-    Qualquer usuário autenticado pode ver o histórico.
+    Lista histórico de validações no escopo do usuário.
     Filtros opcionais: status, mês, despesa.
     """
-    validations = expense_validation_service.get_history(db, status, month, expense_id)
+    validations = expense_validation_service.get_history(
+        db, status, month, expense_id, current_user=current_user
+    )
     return validations
 
 
@@ -82,7 +83,7 @@ def get_predicted_validations(
             detail="Este endpoint é apenas para meses futuros. Use /pending ou /history para meses passados/atuais."
         )
     
-    predicted = expense_validation_service.get_predicted_validations(db, first_day_target)
+    predicted = expense_validation_service.get_predicted_validations(db, first_day_target, current_user=current_user)
     
     # Converter para formato de resposta (criar objetos temporários similares a ExpenseValidation)
     result = []
@@ -160,8 +161,7 @@ def get_validation(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Busca validação específica.
-    Qualquer usuário autenticado pode ver qualquer validação.
+    Busca validação específica (apenas se estiver no escopo do usuário).
     """
     validation = expense_validation_service.get_by_id(db, validation_id)
     
@@ -170,7 +170,11 @@ def get_validation(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Validação não encontrada"
         )
-    
+    if not can_access_expense(current_user, validation.expense):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Você não tem acesso a esta validação"
+        )
     return validation
 
 
@@ -181,9 +185,19 @@ def approve_validation(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Aprova validação.
-    Qualquer usuário autenticado pode aprovar validações.
+    Aprova validação (apenas se a despesa estiver no escopo do usuário).
     """
+    validation = expense_validation_service.get_by_id(db, validation_id)
+    if not validation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Validação não encontrada"
+        )
+    if not can_approve_expense(current_user, validation.expense):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Você não tem permissão para aprovar esta validação"
+        )
     try:
         validation = expense_validation_service.approve(db, validation_id, current_user.id)
         return validation
@@ -202,9 +216,20 @@ def reject_validation(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Rejeita validação (cancela despesa).
+    Rejeita validação (cancela despesa). Apenas se a despesa estiver no escopo do usuário.
     Body opcional: charged_this_month (se a despesa já foi processada no mês, valor conta no dashboard).
     """
+    validation = expense_validation_service.get_by_id(db, validation_id)
+    if not validation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Validação não encontrada"
+        )
+    if not can_approve_expense(current_user, validation.expense):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Você não tem permissão para rejeitar esta validação"
+        )
     charged = body.charged_this_month
     try:
         validation = expense_validation_service.reject(

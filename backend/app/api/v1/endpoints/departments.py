@@ -4,7 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.deps import require_roles
+from app.core.deps import require_roles, get_current_user
+from app.core.permissions import _role_value
 from app.models.user import User, UserRole
 from app.schemas.department import DepartmentCreate, DepartmentUpdate, DepartmentResponse, DepartmentWithCompanyResponse
 from app.services import department_service, company_service
@@ -13,6 +14,35 @@ router = APIRouter(prefix="/departments", tags=["Departments"])
 
 # Apenas admins podem gerenciar setores
 admin_only = require_roles([UserRole.FINANCE_ADMIN, UserRole.SYSTEM_ADMIN])
+
+
+@router.get("/me", response_model=list[DepartmentWithCompanyResponse])
+def get_my_departments(
+    company_id: UUID | None = Query(None, description="Filtrar por empresa"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Retorna setores do escopo do usuário logado"""
+    role_val = _role_value(current_user.role)
+    
+    if role_val in (UserRole.SYSTEM_ADMIN.value, UserRole.FINANCE_ADMIN.value):
+        # System Admin e Finance Admin têm acesso a tudo
+        if company_id:
+            return department_service.get_by_company(db, company_id)
+        return department_service.get_all(db)
+    elif role_val == UserRole.LEADER.value:
+        company_ids = [c.id for c in current_user.companies] if current_user.companies else []
+        if not company_ids:
+            return []
+        # Retornar todos os departamentos das empresas do líder
+        all_depts = department_service.get_all(db)
+        filtered = [d for d in all_depts if d.company_id in company_ids]
+        if company_id:
+            if company_id not in company_ids:
+                return []
+            filtered = [d for d in filtered if d.company_id == company_id]
+        return filtered
+    return []
 
 
 @router.get("", response_model=list[DepartmentWithCompanyResponse])

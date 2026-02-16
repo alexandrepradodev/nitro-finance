@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.deps import get_current_user, require_roles
+from app.core.permissions import _role_value as role_value
 from app.models.user import User, UserRole
 from app.models.alert import AlertStatus
 from app.schemas.alert import AlertResponse, AlertWithRelationsResponse, AlertStatsResponse
@@ -122,7 +123,7 @@ def mark_alert_as_read(
         )
     
     # Verificar permissão
-    if current_user.role not in [UserRole.FINANCE_ADMIN, UserRole.SYSTEM_ADMIN]:
+    if role_value(current_user.role) not in (UserRole.FINANCE_ADMIN.value, UserRole.SYSTEM_ADMIN.value):
         if alert.recipient_id != current_user.id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

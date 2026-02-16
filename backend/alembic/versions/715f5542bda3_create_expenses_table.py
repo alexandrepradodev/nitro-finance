@@ -55,7 +55,6 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('id'),
     schema='public'
     )
-    op.drop_table('alembic_version')
     op.alter_column('categories', 'updated_at',
                existing_type=postgresql.TIMESTAMP(timezone=True),
                nullable=True)
@@ -102,9 +101,5 @@ def downgrade() -> None:
     op.alter_column('categories', 'updated_at',
                existing_type=postgresql.TIMESTAMP(timezone=True),
                nullable=False)
-    op.create_table('alembic_version',
-    sa.Column('version_num', sa.VARCHAR(length=32), autoincrement=False, nullable=False),
-    sa.PrimaryKeyConstraint('version_num', name=op.f('alembic_version_pkc'))
-    )
     op.drop_table('expenses', schema='public')
     # ### end Alembic commands ###

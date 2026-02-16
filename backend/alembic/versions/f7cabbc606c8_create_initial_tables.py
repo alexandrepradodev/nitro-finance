@@ -9,6 +9,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy import text
 
 
 # revision identifiers, used by Alembic.
@@ -87,9 +88,13 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Downgrade schema."""
-    op.drop_table('user_departments', schema=SCHEMA)
-    op.drop_table('departments', schema=SCHEMA)
-    op.drop_index(op.f('ix_users_email'), table_name='users', schema=SCHEMA)
-    op.drop_table('users', schema=SCHEMA)
-    op.drop_table('companies', schema=SCHEMA)
-    op.drop_table('categories', schema=SCHEMA)
+    # Verificar e dropar tabelas apenas se existirem
+    # Usar SQL direto com IF EXISTS para evitar erros quando tabelas não existem
+    
+    # Dropar tabelas na ordem correta (respeitando foreign keys)
+    op.execute(text(f'DROP TABLE IF EXISTS {SCHEMA}.user_departments CASCADE'))
+    op.execute(text(f'DROP TABLE IF EXISTS {SCHEMA}.departments CASCADE'))
+    op.execute(text(f'DROP INDEX IF EXISTS {SCHEMA}.ix_users_email'))
+    op.execute(text(f'DROP TABLE IF EXISTS {SCHEMA}.users CASCADE'))
+    op.execute(text(f'DROP TABLE IF EXISTS {SCHEMA}.companies CASCADE'))
+    op.execute(text(f'DROP TABLE IF EXISTS {SCHEMA}.categories CASCADE'))

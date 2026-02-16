@@ -1,5 +1,6 @@
 from uuid import UUID
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.category import Category
@@ -17,8 +18,8 @@ def get_by_id(db: Session, category_id: UUID) -> Category | None:
 
 
 def get_by_name(db: Session, name: str) -> Category | None:
-    """Busca categoria por nome"""
-    return db.query(Category).filter(Category.name == name).first()
+    """Busca categoria por nome (case-insensitive)"""
+    return db.query(Category).filter(func.lower(Category.name) == func.lower(name)).first()
 
 
 def create(db: Session, data: CategoryCreate) -> Category:

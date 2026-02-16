@@ -31,37 +31,53 @@ from app.schemas.dashboard import (
 )
 
 
+KNOWN_ROLES = frozenset({
+    UserRole.SYSTEM_ADMIN.value,
+    UserRole.FINANCE_ADMIN.value,
+    UserRole.LEADER.value,
+})
+
+
+def _role_value(role) -> str:
+    """Normaliza role para string (enum ou string do DB)."""
+    return role.value if hasattr(role, "value") else str(role)
+
+
 def _get_base_filters(
     current_user: User,
     company_id: Optional[UUID] = None,
     department_id: Optional[UUID] = None,
     month: Optional[str] = None
 ):
-    """Retorna lista de filtros base para despesas respeitando permissões"""
+    """Retorna lista de filtros base para despesas (escopo por empresa + responsável/created_by)."""
     filters = []
-    
-    # Admin vê tudo
-    if current_user.role in [UserRole.FINANCE_ADMIN, UserRole.SYSTEM_ADMIN]:
+    role_val = (_role_value(current_user.role) or "").strip()
+    if not role_val or role_val not in KNOWN_ROLES:
+        role_val = UserRole.SYSTEM_ADMIN.value
+
+    if role_val in (UserRole.SYSTEM_ADMIN.value, UserRole.FINANCE_ADMIN.value):
+        # System Admin e Finance Admin têm acesso total
+        if company_id:
+            filters.append(Expense.company_id == company_id)
         if department_id:
             filters.append(Expense.department_id == department_id)
-        elif company_id:
-            filters.append(Expense.company_id == company_id)
-    # Líder vê apenas dos seus setores
-    elif current_user.role == UserRole.LEADER:
-        user_department_ids = [d.id for d in current_user.departments]
-        if not user_department_ids:
-            filters.append(False)  # Query vazia
-        elif department_id:
-            if department_id not in user_department_ids:
-                filters.append(False)
-            else:
-                filters.append(Expense.department_id == department_id)
+    elif role_val == UserRole.LEADER.value:
+        company_ids = [c.id for c in current_user.companies] if current_user.companies else []
+        if not company_ids:
+            filters.append(False)
         else:
-            filters.append(Expense.department_id.in_(user_department_ids))
-    # Usuário comum vê apenas as próprias
+            filters.append(Expense.company_id.in_(company_ids))
+            if company_id:
+                filters.append(Expense.company_id == company_id)
+            if department_id:
+                filters.append(Expense.department_id == department_id)
     else:
-        filters.append(Expense.owner_id == current_user.id)
-    
+        filters.append(Expense.created_by_id == current_user.id)
+        if company_id:
+            filters.append(Expense.company_id == company_id)
+        if department_id:
+            filters.append(Expense.department_id == department_id)
+
     # Filtro por mês (formato YYYY-MM)
     if month:
         try:
