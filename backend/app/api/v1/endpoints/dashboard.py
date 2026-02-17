@@ -63,36 +63,55 @@ def get_dashboard_stats(
     validate_dashboard_filters(current_user, company_id, department_id)
     stats = dashboard_service.get_dashboard_stats(db, current_user, company_id, department_id, month)
     
-    # Calcular validações pendentes (escopo por empresa + owner)
-    if role_value(current_user.role) in (UserRole.SYSTEM_ADMIN.value, UserRole.FINANCE_ADMIN.value):
-        # System Admin e Finance Admin veem todas as validações pendentes
-        pending_validations = db.query(func.count(ExpenseValidation.id)).filter(
-            ExpenseValidation.status == ValidationStatus.PENDING
-        ).scalar() or 0
-    elif role_value(current_user.role) == UserRole.LEADER.value:
+    # Calcular validações pendentes (respeitando filtro de empresa)
+    user_role = role_value(current_user.role)
+    if user_role in (UserRole.SYSTEM_ADMIN.value, UserRole.FINANCE_ADMIN.value):
+        validation_filters = [ExpenseValidation.status == ValidationStatus.PENDING]
+        if company_id:
+            validation_filters.append(Expense.company_id == company_id)
+        if department_id:
+            validation_filters.append(Expense.department_id == department_id)
+        pending_validations = db.query(func.count(ExpenseValidation.id)).join(
+            Expense, ExpenseValidation.expense_id == Expense.id
+        ).filter(and_(*validation_filters)).scalar() or 0
+    elif user_role == UserRole.LEADER.value:
         company_ids = [c.id for c in current_user.companies] if current_user.companies else []
         if company_ids:
+            validation_filters = [
+                ExpenseValidation.status == ValidationStatus.PENDING,
+                Expense.owner_id == current_user.id,
+                Expense.company_id.in_(company_ids),
+            ]
+            if company_id:
+                validation_filters.append(Expense.company_id == company_id)
+            if department_id:
+                validation_filters.append(Expense.department_id == department_id)
             pending_validations = db.query(func.count(ExpenseValidation.id)).join(
                 Expense, ExpenseValidation.expense_id == Expense.id
-            ).filter(
-                and_(
-                    ExpenseValidation.status == ValidationStatus.PENDING,
-                    Expense.owner_id == current_user.id,
-                    Expense.company_id.in_(company_ids)
-                )
-            ).scalar() or 0
+            ).filter(and_(*validation_filters)).scalar() or 0
         else:
             pending_validations = 0
     else:
         pending_validations = 0
     
-    # Calcular alertas não lidos
-    unread_alerts = db.query(func.count(Alert.id)).filter(
-        and_(
-            Alert.recipient_id == current_user.id,
-            Alert.status == AlertStatus.PENDING
-        )
-    ).scalar() or 0
+    # Calcular alertas não lidos (respeitando filtro de empresa)
+    if company_id:
+        unread_alerts = db.query(func.count(Alert.id)).outerjoin(
+            Expense, Alert.expense_id == Expense.id
+        ).filter(
+            and_(
+                Alert.recipient_id == current_user.id,
+                Alert.status == AlertStatus.PENDING,
+                Expense.company_id == company_id,
+            )
+        ).scalar() or 0
+    else:
+        unread_alerts = db.query(func.count(Alert.id)).filter(
+            and_(
+                Alert.recipient_id == current_user.id,
+                Alert.status == AlertStatus.PENDING,
+            )
+        ).scalar() or 0
     
     # Atualizar stats com valores calculados
     stats.pending_validations = pending_validations

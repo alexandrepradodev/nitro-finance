@@ -53,10 +53,15 @@ def _get_base_filters(
     filters = []
     role_val = (_role_value(current_user.role) or "").strip()
     if not role_val or role_val not in KNOWN_ROLES:
-        role_val = UserRole.SYSTEM_ADMIN.value
+        # Fallback seguro: restringir ao criador (sem acesso amplo)
+        filters.append(Expense.created_by_id == current_user.id)
+        if company_id:
+            filters.append(Expense.company_id == company_id)
+        if department_id:
+            filters.append(Expense.department_id == department_id)
+        return filters
 
     if role_val in (UserRole.SYSTEM_ADMIN.value, UserRole.FINANCE_ADMIN.value):
-        # System Admin e Finance Admin têm acesso total
         if company_id:
             filters.append(Expense.company_id == company_id)
         if department_id:
@@ -64,7 +69,7 @@ def _get_base_filters(
     elif role_val == UserRole.LEADER.value:
         company_ids = [c.id for c in current_user.companies] if current_user.companies else []
         if not company_ids:
-            filters.append(False)
+            filters.append(Expense.company_id.in_([]))
         else:
             filters.append(Expense.company_id.in_(company_ids))
             if company_id:
