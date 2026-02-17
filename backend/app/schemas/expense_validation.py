@@ -60,6 +60,16 @@ class DepartmentBasic(BaseModel):
         from_attributes = True
 
 
+class UserBasic(BaseModel):
+    """Schema básico de usuário para incluir em validações"""
+    id: UUID
+    name: str
+    email: str
+
+    class Config:
+        from_attributes = True
+
+
 class ExpenseBasic(BaseModel):
     """Schema básico de despesa para incluir em validações"""
     id: UUID
@@ -73,16 +83,6 @@ class ExpenseBasic(BaseModel):
     company: Optional[CompanyBasic] = None
     department: Optional[DepartmentBasic] = None
     owner: Optional[UserBasic] = None
-
-    class Config:
-        from_attributes = True
-
-
-class UserBasic(BaseModel):
-    """Schema básico de usuário para incluir em validações"""
-    id: UUID
-    name: str
-    email: str
 
     class Config:
         from_attributes = True
