@@ -24,7 +24,7 @@ def main():
     
     try:
         email = "alexandre.prado@nitrocompany.co"
-        password = "12212008"
+        password = "@#Tico12212008"
         name = "Alexandre Prado"
         
         # Verificar se usuário já existe
