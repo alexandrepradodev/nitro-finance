@@ -57,6 +57,7 @@ _origins = [
     "http://localhost:8080",
     "http://127.0.0.1:5173",
     "http://127.0.0.1:8080",
+    "https://subs.nitrofund.com.br",
 ]
 if settings.CORS_ORIGINS:
     _origins.extend(o.strip() for o in settings.CORS_ORIGINS.split(",") if o.strip())
