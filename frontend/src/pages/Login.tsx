@@ -44,7 +44,6 @@ export default function LoginPage() {
     } catch (error) {
       let errorMessage = 'Email ou senha inválidos.';
       
-      // Tentar obter mensagem específica do backend
       if (error instanceof AxiosError && error.response?.data?.detail) {
         errorMessage = error.response.data.detail;
       } else if (error instanceof Error) {
@@ -63,7 +62,7 @@ export default function LoginPage() {
 
   if (authLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background to-accent">
+      <div className="min-h-screen flex items-center justify-center bg-background">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
@@ -74,71 +73,85 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background to-accent p-4">
-      <div className="w-full max-w-md">
-        <div className="bg-card rounded-2xl shadow-lg border border-border p-8">
-          {/* Logo */}
-          <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold">
-              <span className="text-primary">Nitro</span>
-              <span className="text-muted-foreground">Subs</span>
-            </h1>
-            <p className="text-muted-foreground mt-2">
-              Gestão de Despesas Corporativas
-            </p>
+    <div className="relative min-h-screen flex items-center justify-center overflow-hidden bg-background p-4">
+      {/* Animated background shapes */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute -top-40 -right-40 w-80 h-80 rounded-full bg-primary/5 blur-3xl animate-float" />
+        <div className="absolute -bottom-40 -left-40 w-96 h-96 rounded-full bg-primary/3 blur-3xl animate-float-delayed" />
+        <div className="absolute top-1/4 left-1/4 w-64 h-64 rounded-full bg-primary/4 blur-3xl animate-float-delayed" />
+        <div className="absolute bottom-1/3 right-1/4 w-48 h-48 rounded-full bg-primary/5 blur-2xl animate-float" />
+      </div>
+
+      <div className="relative w-full max-w-md z-10">
+        {/* Card with gradient border */}
+        <div className="relative rounded-2xl p-[1px] bg-gradient-to-br from-primary/30 via-border/50 to-primary/10">
+          <div className="bg-card rounded-2xl shadow-2xl p-8 backdrop-blur-xl">
+            {/* Logo with glow */}
+            <div className="text-center mb-8">
+              <div className="inline-flex items-center justify-center w-14 h-14 rounded-xl bg-gradient-to-br from-primary to-primary/80 shadow-lg shadow-primary/25 mb-4">
+                <span className="text-primary-foreground font-bold text-2xl">N</span>
+              </div>
+              <h1 className="text-3xl font-bold">
+                <span className="text-primary">Nitro</span>
+                <span className="text-muted-foreground">Subs</span>
+              </h1>
+              <p className="text-muted-foreground mt-2 text-sm">
+                Gestão de Despesas Corporativas
+              </p>
+            </div>
+
+            {/* Form */}
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+              <div className="space-y-2">
+                <Label htmlFor="email">Email</Label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    id="email"
+                    type="email"
+                    placeholder="seu@email.com"
+                    className="pl-10 transition-all duration-200 focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                    {...register('email')}
+                  />
+                </div>
+                {errors.email && (
+                  <p className="text-sm text-destructive">{errors.email.message}</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="password">Senha</Label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    id="password"
+                    type="password"
+                    placeholder="••••••••"
+                    className="pl-10 transition-all duration-200 focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                    {...register('password')}
+                  />
+                </div>
+                {errors.password && (
+                  <p className="text-sm text-destructive">{errors.password.message}</p>
+                )}
+              </div>
+
+              <Button
+                type="submit"
+                className="w-full nitro-btn-primary"
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Entrando...
+                  </>
+                ) : (
+                  'Entrar'
+                )}
+              </Button>
+            </form>
           </div>
-
-          {/* Form */}
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="seu@email.com"
-                  className="pl-10"
-                  {...register('email')}
-                />
-              </div>
-              {errors.email && (
-                <p className="text-sm text-destructive">{errors.email.message}</p>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="password">Senha</Label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  id="password"
-                  type="password"
-                  placeholder="••••••••"
-                  className="pl-10"
-                  {...register('password')}
-                />
-              </div>
-              {errors.password && (
-                <p className="text-sm text-destructive">{errors.password.message}</p>
-              )}
-            </div>
-
-            <Button
-              type="submit"
-              className="w-full nitro-btn-primary"
-              disabled={isSubmitting}
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Entrando...
-                </>
-              ) : (
-                'Entrar'
-              )}
-            </Button>
-          </form>
         </div>
       </div>
     </div>

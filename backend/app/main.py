@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.api.v1.endpoints import auth, users, companies, departments, categories, expenses, expense_validations, alerts, dashboard
 
@@ -50,15 +51,18 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS para o frontend (dev: localhost:5173 ou 8080)
+# CORS: dev (localhost) + origens de produção (CORS_ORIGINS)
+_origins = [
+    "http://localhost:5173",
+    "http://localhost:8080",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:8080",
+]
+if settings.CORS_ORIGINS:
+    _origins.extend(o.strip() for o in settings.CORS_ORIGINS.split(",") if o.strip())
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://localhost:8080",
-        "http://127.0.0.1:5173",
-        "http://127.0.0.1:8080",
-    ],
+    allow_origins=_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

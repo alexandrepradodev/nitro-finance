@@ -19,5 +19,8 @@ class Settings(BaseSettings):
     # Cotação
     AWESOME_API_URL: str = "https://economia.awesomeapi.com.br/json/last/USD-BRL"
 
+    # CORS (produção: lista separada por vírgula, ex: "https://subs.nitrofund.com")
+    CORS_ORIGINS: str = ""
+
 
 settings = Settings()

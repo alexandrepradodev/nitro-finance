@@ -11,13 +11,11 @@ import {
   Users,
   ChevronLeft,
   Menu,
-  LogOut,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
   Sheet,
   SheetContent,
@@ -41,7 +39,7 @@ const adminNavItems = [
 
 function SidebarContent({ isCollapsed, onItemClick }: { isCollapsed: boolean; onItemClick?: () => void }) {
   const location = useLocation();
-  const { user, logout, isAdmin, isLeader } = useAuth();
+  const { isAdmin, isLeader } = useAuth();
 
   const isActive = (href: string) => location.pathname === href;
 
@@ -50,13 +48,16 @@ function SidebarContent({ isCollapsed, onItemClick }: { isCollapsed: boolean; on
       to={href}
       onClick={onItemClick}
       className={cn(
-        'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150',
+        'group flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200',
         isActive(href)
-          ? 'bg-accent text-accent-foreground border-l-3 border-primary'
-          : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+          ? 'bg-gradient-to-r from-primary/15 to-primary/5 text-primary border-l-[3px] border-primary shadow-sm'
+          : 'text-muted-foreground hover:bg-muted/80 hover:text-foreground hover:translate-x-0.5'
       )}
     >
-      <Icon className="h-5 w-5 flex-shrink-0" />
+      <Icon className={cn(
+        'h-5 w-5 flex-shrink-0 transition-colors duration-200',
+        isActive(href) ? 'text-primary' : 'group-hover:text-primary/70'
+      )} />
       {!isCollapsed && <span>{label}</span>}
     </Link>
   );
@@ -64,9 +65,9 @@ function SidebarContent({ isCollapsed, onItemClick }: { isCollapsed: boolean; on
   return (
     <div className="flex flex-col h-full">
       {/* Logo */}
-      <div className="p-4 border-b border-border">
-        <Link to="/dashboard" className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
+      <div className="p-4 border-b border-border/50">
+        <Link to="/dashboard" className="flex items-center gap-2 group">
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shadow-md shadow-primary/20 transition-shadow duration-300 group-hover:shadow-lg group-hover:shadow-primary/30">
             <span className="text-primary-foreground font-bold text-lg">N</span>
           </div>
           {!isCollapsed && (
@@ -75,7 +76,7 @@ function SidebarContent({ isCollapsed, onItemClick }: { isCollapsed: boolean; on
                 <span className="text-primary">Nitro</span>
                 <span className="text-muted-foreground">Subs</span>
               </span>
-              <Badge variant="secondary" className="text-xs">
+              <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 font-semibold">
                 Beta
               </Badge>
             </div>
@@ -96,9 +97,13 @@ function SidebarContent({ isCollapsed, onItemClick }: { isCollapsed: boolean; on
           <>
             <div className="mt-6 mb-2">
               {!isCollapsed && (
-                <p className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                  Cadastros
-                </p>
+                <div className="flex items-center gap-2 px-3">
+                  <div className="h-px flex-1 bg-gradient-to-r from-primary/30 to-transparent" />
+                  <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">
+                    Cadastros
+                  </p>
+                  <div className="h-px flex-1 bg-gradient-to-l from-primary/30 to-transparent" />
+                </div>
               )}
             </div>
             <nav className="space-y-1">
@@ -108,32 +113,6 @@ function SidebarContent({ isCollapsed, onItemClick }: { isCollapsed: boolean; on
             </nav>
           </>
         )}
-      </div>
-
-      {/* User section */}
-      <div className="p-4 border-t border-border">
-        <div className={cn('flex items-center', isCollapsed ? 'justify-center' : 'gap-3')}>
-          <Avatar className="h-9 w-9">
-            <AvatarFallback className="bg-primary text-primary-foreground text-sm">
-              {user?.name?.charAt(0) || 'U'}
-            </AvatarFallback>
-          </Avatar>
-          {!isCollapsed && (
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate">{user?.name}</p>
-              <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
-            </div>
-          )}
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={logout}
-            className="text-muted-foreground hover:text-destructive"
-            title="Sair"
-          >
-            <LogOut className="h-4 w-4" />
-          </Button>
-        </div>
       </div>
     </div>
   );
@@ -161,7 +140,7 @@ export function AppSidebar() {
   return (
     <aside
       className={cn(
-        'hidden md:flex flex-col bg-card border-r border-border transition-all duration-200',
+        'hidden md:flex flex-col bg-card border-r border-border/50 transition-all duration-200',
         isCollapsed ? 'w-[68px]' : 'w-64'
       )}
     >
@@ -172,7 +151,7 @@ export function AppSidebar() {
         variant="ghost"
         size="icon"
         onClick={() => setIsCollapsed(!isCollapsed)}
-        className="absolute -right-3 top-20 h-6 w-6 rounded-full border border-border bg-card shadow-sm"
+        className="absolute -right-3 top-20 h-6 w-6 rounded-full border border-border/50 bg-card shadow-sm hover:shadow-md transition-shadow"
       >
         <ChevronLeft className={cn('h-3 w-3 transition-transform', isCollapsed && 'rotate-180')} />
       </Button>

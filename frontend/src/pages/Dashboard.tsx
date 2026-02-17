@@ -51,7 +51,7 @@ function MetricCard({
   loading?: boolean;
 }) {
   return (
-    <Card className="hover:shadow-md transition-shadow duration-150">
+    <Card className="group glow-primary gradient-border transition-all duration-200 hover:-translate-y-0.5">
       <CardContent className="p-6">
         <div className="flex items-start justify-between">
           <div className="flex-1">
@@ -65,7 +65,7 @@ function MetricCard({
               <p className="text-xs text-muted-foreground mt-1">{description}</p>
             )}
           </div>
-          <div className="p-3 bg-accent rounded-xl">
+          <div className="p-3 bg-gradient-to-br from-primary/20 to-primary/5 rounded-xl transition-all duration-300 group-hover:from-primary/30 group-hover:to-primary/10 group-hover:shadow-md group-hover:shadow-primary/10">
             <Icon className="h-5 w-5 text-primary" />
           </div>
         </div>
