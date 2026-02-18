@@ -11,6 +11,8 @@ from alembic import op
 import sqlalchemy as sa
 from sqlalchemy import text
 
+from app.core.config import settings
+
 
 # revision identifiers, used by Alembic.
 revision: str = 'f7cabbc606c8'
@@ -18,7 +20,7 @@ down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
-SCHEMA = 'public'
+SCHEMA = settings.DATABASE_SCHEMA
 
 
 def upgrade() -> None:

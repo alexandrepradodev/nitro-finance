@@ -9,12 +9,14 @@ from typing import Sequence, Union
 
 from alembic import op
 
+from app.core.config import settings
+
 revision: str = 'h0c1d2e3f4a5'
 down_revision: Union[str, Sequence[str], None] = 'g9b0c1d2e3f4'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
-SCHEMA = 'public'
+SCHEMA = settings.DATABASE_SCHEMA
 
 
 def upgrade() -> None:

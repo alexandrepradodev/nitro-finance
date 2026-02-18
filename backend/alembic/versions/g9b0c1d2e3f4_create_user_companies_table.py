@@ -10,12 +10,14 @@ from typing import Sequence, Union
 from alembic import op
 import sqlalchemy as sa
 
+from app.core.config import settings
+
 revision: str = 'g9b0c1d2e3f4'
 down_revision: Union[str, Sequence[str], None] = 'f8a9b0c1d2e3'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
-SCHEMA = 'public'
+SCHEMA = settings.DATABASE_SCHEMA
 
 
 def upgrade() -> None:

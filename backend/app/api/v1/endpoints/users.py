@@ -35,14 +35,13 @@ def get_scoped_users(
     if role_val in (UserRole.SYSTEM_ADMIN.value, UserRole.FINANCE_ADMIN.value):
         # System Admin e Finance Admin veem todos os líderes e admins
         all_users = user_service.get_all(db)
-        return [u for u in all_users if u.is_active and u.role in (UserRole.LEADER, UserRole.FINANCE_ADMIN, UserRole.SYSTEM_ADMIN)]
+        allowed = {UserRole.LEADER.value, UserRole.FINANCE_ADMIN.value, UserRole.SYSTEM_ADMIN.value}
+        return [u for u in all_users if u.is_active and _role_value(u.role) in allowed]
     elif role_val == UserRole.LEADER.value:
-        # Leader vê usuários que compartilham pelo menos uma empresa com ele
         company_ids = [c.id for c in current_user.companies] if current_user.companies else []
         if not company_ids:
             return []
         
-        # Buscar usuários que têm pelo menos uma empresa em comum com o leader
         users_with_companies = db.query(User).options(
             subqueryload(User.companies),
             subqueryload(User.departments),
@@ -52,7 +51,20 @@ def get_scoped_users(
             user_companies.c.company_id.in_(company_ids),
             User.is_active == True
         ).distinct().all()
-        
+
+        admin_users = db.query(User).options(
+            subqueryload(User.companies),
+            subqueryload(User.departments),
+        ).filter(
+            User.role.in_([UserRole.SYSTEM_ADMIN, UserRole.FINANCE_ADMIN]),
+            User.is_active == True
+        ).all()
+
+        seen_ids = {u.id for u in users_with_companies}
+        for admin in admin_users:
+            if admin.id not in seen_ids:
+                users_with_companies.append(admin)
+
         return users_with_companies
     return []
 

@@ -78,6 +78,39 @@ O Nitro Finance força **governança financeira**, garantindo que toda despesa t
 
 ---
 
+## 🚀 Início Rápido - Desenvolvimento Local
+
+Para configurar o ambiente de desenvolvimento local, consulte o guia completo:
+
+**[📖 SETUP_LOCALHOST.md](SETUP_LOCALHOST.md)**
+
+### Resumo rápido:
+
+1. **Backend:**
+   ```bash
+   cd backend
+   python -m venv venv
+   source venv/bin/activate  # ou venv\Scripts\activate no Windows
+   pip install -r requirements.txt
+   cp .env.example .env  # Configure suas credenciais do banco
+   alembic upgrade head
+   uvicorn app.main:app --reload --port 8000
+   ```
+
+2. **Frontend:**
+   ```bash
+   cd frontend
+   npm install
+   npm run dev
+   ```
+
+3. **Acesse:**
+   - Frontend: http://localhost:5173
+   - Backend API: http://localhost:8000
+   - API Docs: http://localhost:8000/docs
+
+---
+
 ## 🛠️ Tecnologias Utilizadas
 
 ### Backend

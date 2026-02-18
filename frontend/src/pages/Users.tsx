@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Pencil, Trash2, Loader2, Users, X } from 'lucide-react';
-import { usersApi, companiesApi, departmentsApi } from '@/services/api';
+import { Plus, Pencil, Trash2, Loader2, Users } from 'lucide-react';
+import { usersApi, companiesApi } from '@/services/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -45,7 +45,6 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { getRoleLabel, getRoleBadgeVariant } from '@/lib/formatters';
 import type { User, UserRole, Department } from '@/types';
-import { Checkbox } from '@/components/ui/checkbox';
 
 const roleOptions: { value: UserRole; label: string }[] = [
   { value: 'finance_admin', label: 'Finance Admin' },
@@ -80,56 +79,13 @@ export default function UsersPage() {
     queryFn: companiesApi.getAll,
   });
 
-  // Buscar departments quando empresas são selecionadas (apenas para finance_admin)
+  // Limpar departments quando não for leader (departments não são mais necessários)
   useEffect(() => {
-    const fetchDepartments = async () => {
-      const newDepartmentsByCompany: Record<string, Department[]> = {};
-      const companiesToFetch = formCompanyIds.filter(id => !departmentsByCompany[id]);
-      
-      // Buscar departments apenas para empresas novas
-      for (const companyId of companiesToFetch) {
-        try {
-          const depts = await departmentsApi.getAll(companyId);
-          newDepartmentsByCompany[companyId] = depts.filter(d => d.is_active);
-        } catch (error) {
-          console.error(`Erro ao buscar setores da empresa ${companyId}:`, error);
-          newDepartmentsByCompany[companyId] = [];
-        }
-      }
-      
-      // Manter departments já carregados e adicionar novos
-      const updatedDepartmentsByCompany = { ...departmentsByCompany, ...newDepartmentsByCompany };
-      
-      // Remover departments de empresas que não estão mais selecionadas
-      const finalDepartmentsByCompany: Record<string, Department[]> = {};
-      for (const companyId of formCompanyIds) {
-        if (updatedDepartmentsByCompany[companyId]) {
-          finalDepartmentsByCompany[companyId] = updatedDepartmentsByCompany[companyId];
-        }
-      }
-      
-      setDepartmentsByCompany(finalDepartmentsByCompany);
-      
-      // Remover departments de empresas que foram desmarcadas
-      const validDepartmentIds = formDepartmentIds.filter(deptId => {
-        return Object.values(finalDepartmentsByCompany).some(depts => 
-          depts.some(d => d.id === deptId)
-        );
-      });
-      if (validDepartmentIds.length !== formDepartmentIds.length) {
-        setFormDepartmentIds(validDepartmentIds);
-      }
-    };
-
-    // Apenas finance_admin precisa selecionar departamentos
-    if (formCompanyIds.length > 0 && formRole === 'finance_admin') {
-      fetchDepartments();
-    } else {
+    if (formRole !== 'leader') {
       setDepartmentsByCompany({});
       setFormDepartmentIds([]);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [formCompanyIds, formRole]);
+  }, [formRole]);
 
   const createMutation = useMutation({
     mutationFn: usersApi.create,
@@ -199,28 +155,14 @@ export default function UsersPage() {
     setFormRole(user.role);
     setFormPhone(user.phone || '');
     const companyIds = user.companies?.map((c) => c.id) ?? [];
-    setFormCompanyIds(companyIds);
-    // Apenas finance_admin precisa de departments
-    if (user.role === 'finance_admin') {
-      setFormDepartmentIds(user.departments?.map((d) => d.id) ?? []);
-      // Buscar departments das empresas do usuário
-      if (companyIds.length > 0) {
-        const deptsByCompany: Record<string, Department[]> = {};
-        for (const companyId of companyIds) {
-          try {
-            const depts = await departmentsApi.getAll(companyId);
-            deptsByCompany[companyId] = depts.filter(d => d.is_active);
-          } catch (error) {
-            console.error(`Erro ao buscar setores da empresa ${companyId}:`, error);
-            deptsByCompany[companyId] = [];
-          }
-        }
-        setDepartmentsByCompany(deptsByCompany);
-      }
+    // Apenas leader precisa de empresas
+    if (user.role === 'leader') {
+      setFormCompanyIds(companyIds);
     } else {
-      setFormDepartmentIds([]);
-      setDepartmentsByCompany({});
+      setFormCompanyIds([]);
     }
+    setFormDepartmentIds([]);
+    setDepartmentsByCompany({});
     
     setIsFormOpen(true);
   };
@@ -237,8 +179,8 @@ export default function UsersPage() {
           email: formEmail,
           role: formRole,
           phone: formPhone || undefined,
-          company_ids: (formRole === 'leader' || formRole === 'finance_admin') ? formCompanyIds : undefined,
-          department_ids: formRole === 'finance_admin' ? formDepartmentIds : undefined,
+          company_ids: formRole === 'leader' ? formCompanyIds : undefined,
+          department_ids: undefined,
         },
       });
     } else {
@@ -248,8 +190,8 @@ export default function UsersPage() {
         password: formPassword,
         role: formRole,
         phone: formPhone || undefined,
-        company_ids: (formRole === 'leader' || formRole === 'finance_admin') ? formCompanyIds : [],
-        department_ids: formRole === 'finance_admin' ? formDepartmentIds : [],
+        company_ids: formRole === 'leader' ? formCompanyIds : [],
+        department_ids: [],
       });
     }
   };
@@ -426,11 +368,11 @@ export default function UsersPage() {
                 onValueChange={(v) => {
                   const newRole = v as UserRole;
                   setFormRole(newRole);
-                  if (newRole !== 'leader' && newRole !== 'finance_admin') {
+                  if (newRole !== 'leader') {
                     setFormCompanyIds([]);
                     setFormDepartmentIds([]);
                     setDepartmentsByCompany({});
-                  } else if (newRole === 'leader') {
+                  } else {
                     // Limpar departments quando mudar para leader
                     setFormDepartmentIds([]);
                     setDepartmentsByCompany({});
@@ -452,7 +394,7 @@ export default function UsersPage() {
 
             <div className="space-y-2">
               <Label>Empresas (escopo de atuação)</Label>
-              {(formRole === 'leader' || formRole === 'finance_admin') ? (
+              {formRole === 'leader' ? (
                 <div className="space-y-3">
                   <MultiSelect
                     placeholder="Selecione as empresas"
@@ -460,84 +402,14 @@ export default function UsersPage() {
                     value={formCompanyIds}
                     onChange={setFormCompanyIds}
                   />
-                  
-                  {/* Lista de setores por empresa selecionada (apenas para finance_admin) */}
-                  {formRole === 'finance_admin' && formCompanyIds.length > 0 && (
-                    <div className="space-y-3 mt-4 pt-4 border-t">
-                      <Label className="text-sm font-medium">Setores por empresa:</Label>
-                      {formCompanyIds.map((companyId) => {
-                        const company = companies?.find(c => c.id === companyId);
-                        const companyDepartments = departmentsByCompany[companyId] || [];
-                        const selectedDeptIds = formDepartmentIds.filter(id => 
-                          companyDepartments.some(d => d.id === id)
-                        );
-                        
-                        return (
-                          <div key={companyId} className="space-y-2 p-3 border rounded-lg bg-muted/30">
-                            <div className="flex items-center justify-between">
-                              <Label className="text-sm font-semibold">{company?.name || 'Empresa'}</Label>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                className="h-6 w-6 p-0"
-                                onClick={() => {
-                                  const newCompanyIds = formCompanyIds.filter(id => id !== companyId);
-                                  setFormCompanyIds(newCompanyIds);
-                                  // Remover departments dessa empresa
-                                  const deptsToKeep = formDepartmentIds.filter(id =>
-                                    !companyDepartments.some(d => d.id === id)
-                                  );
-                                  setFormDepartmentIds(deptsToKeep);
-                                }}
-                              >
-                                <X className="h-4 w-4" />
-                              </Button>
-                            </div>
-                            {companyDepartments.length > 0 ? (
-                              <div className="space-y-2 pl-2">
-                                {companyDepartments.map((dept) => (
-                                  <div key={dept.id} className="flex items-center space-x-2">
-                                    <Checkbox
-                                      id={`dept-${dept.id}`}
-                                      checked={formDepartmentIds.includes(dept.id)}
-                                      onCheckedChange={(checked) => {
-                                        if (checked) {
-                                          setFormDepartmentIds([...formDepartmentIds, dept.id]);
-                                        } else {
-                                          setFormDepartmentIds(formDepartmentIds.filter(id => id !== dept.id));
-                                        }
-                                      }}
-                                    />
-                                    <Label
-                                      htmlFor={`dept-${dept.id}`}
-                                      className="text-sm font-normal cursor-pointer"
-                                    >
-                                      {dept.name}
-                                    </Label>
-                                  </div>
-                                ))}
-                              </div>
-                            ) : (
-                              <p className="text-sm text-muted-foreground pl-2">
-                                Carregando setores...
-                              </p>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                  {formRole === 'leader' && (
-                    <p className="text-sm text-muted-foreground mt-2">
-                      O líder terá acesso a todos os setores das empresas selecionadas.
-                    </p>
-                  )}
+                  <p className="text-sm text-muted-foreground mt-2">
+                    O líder terá acesso a todos os setores das empresas selecionadas.
+                  </p>
                 </div>
               ) : (
                 <>
                   <p className="text-sm text-muted-foreground">
-                    Empresas se aplicam apenas aos perfis Líder e Finance Admin.
+                    Empresas se aplicam apenas ao perfil Líder. Admins têm acesso global.
                   </p>
                   <div className="pointer-events-none opacity-60">
                     <MultiSelect

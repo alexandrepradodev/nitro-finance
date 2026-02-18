@@ -2,6 +2,7 @@ from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
+from sqlalchemy import text
 
 from alembic import context
 
@@ -51,13 +52,20 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
+        # Criar schema se não existir
+        connection.execute(text(f"CREATE SCHEMA IF NOT EXISTS {settings.DATABASE_SCHEMA}"))
+        connection.commit()
+        
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
             version_table_schema=settings.DATABASE_SCHEMA,
+            include_schemas=True,
         )
 
         with context.begin_transaction():
+            # Configurar o schema padrão dentro da transação
+            context.get_bind().execute(text(f"SET search_path TO {settings.DATABASE_SCHEMA}, public"))
             context.run_migrations()
 
 

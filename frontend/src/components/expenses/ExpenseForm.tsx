@@ -226,6 +226,7 @@ export function ExpenseForm({ expense, onSuccess, onCancel }: ExpenseFormProps) 
   useEffect(() => {
     if (selectedCompanyId && selectedOwnerId && users) {
       const currentOwner = users.find((u) => u.id === selectedOwnerId);
+      if (currentOwner?.role === 'system_admin' || currentOwner?.role === 'finance_admin') return;
       const ownerBelongsToCompany = currentOwner?.companies?.some((c) => c.id === selectedCompanyId) ?? false;
       if (!ownerBelongsToCompany) {
         setValue('owner_id', '');
