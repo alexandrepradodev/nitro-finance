@@ -258,7 +258,7 @@ def mark_overdue_validations_endpoint(
 
 @router.post("/create-monthly", status_code=status.HTTP_201_CREATED)
 def create_monthly_validations_endpoint(
-    month: date | None = Query(None, description="Mês para criar validações (primeiro dia do mês). Se não fornecido, usa o mês atual."),
+    month: date | None = Query(None, description="Mês para criar validações (primeiro dia do mês). Se não fornecido, usa o mês atual (APP_TIMEZONE)."),
     db: Session = Depends(get_db),
     current_user: User = Depends(admin_only)
 ):
@@ -267,14 +267,13 @@ def create_monthly_validations_endpoint(
     Apenas admins podem executar.
     Se month não for fornecido, usa o primeiro dia do mês atual.
     """
-    from datetime import datetime
-    
+    from app.tasks.monthly_validation import _get_current_month_date
+
     if month is None:
-        today = datetime.now().date()
-        month = today.replace(day=1)
+        month = _get_current_month_date()
     else:
         month = month.replace(day=1)
-    
+
     validations = expense_validation_service.create_monthly_validations(db, month)
     
     return {

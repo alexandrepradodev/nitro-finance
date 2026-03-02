@@ -22,5 +22,9 @@ class Settings(BaseSettings):
     # CORS (produção: lista separada por vírgula, ex: "https://subs.nitrofund.com")
     CORS_ORIGINS: str = ""
 
+    # Timezone para determinação do "mês atual" (validações, dashboard)
+    # Padrão: America/Sao_Paulo (Brasil)
+    APP_TIMEZONE: str = "America/Sao_Paulo"
+
 
 settings = Settings()

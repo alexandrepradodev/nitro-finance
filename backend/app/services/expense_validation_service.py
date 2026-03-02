@@ -1,9 +1,11 @@
 from uuid import UUID
 from datetime import date, datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session, joinedload, subqueryload
 from sqlalchemy import and_
 
+from app.core.config import settings
 from app.models.expense_validation import ExpenseValidation, ValidationStatus
 from app.models.expense import Expense, ExpenseStatus, ExpenseType, Periodicity
 from app.models.user import User, UserRole
@@ -13,15 +15,16 @@ from app.schemas.expense_validation import ExpenseValidationCreate
 def should_create_validation_for_month(expense: Expense, target_month: date) -> bool:
     """
     Determina se deve criar validação para um mês específico baseado na periodicidade.
-    Se a despesa tem renewal_date, usa o mês dessa data como âncora; senão usa created_at.
-    Não cria validação para meses anteriores ou iguais ao mês de criação da despesa.
+    Monthly: toda despesa ativa gera validação em todo mês posterior à criação.
+    Quarterly/Semiannual/Annual: usa renewal_date como âncora do ciclo.
     """
     if expense.expense_type != ExpenseType.RECURRING or not expense.periodicity:
         return False
 
     target_first_day = target_month.replace(day=1)
 
-    # Não criar validação para meses anteriores ou iguais à criação
+    # Não criar validação para o mês de criação ou anteriores
+    # (o mês de criação é coberto por create_validation_for_creation_month)
     creation_month = (
         expense.created_at.replace(day=1).date()
         if isinstance(expense.created_at, datetime)
@@ -30,21 +33,24 @@ def should_create_validation_for_month(expense: Expense, target_month: date) -> 
     if target_first_day <= creation_month:
         return False
 
-    # Usar renewal_date como âncora se disponível, senão usar created_at
+    # Monthly: toda despesa ativa gera validação em qualquer mês posterior à criação
+    if expense.periodicity == Periodicity.MONTHLY:
+        return True
+
+    # Quarterly/Semiannual/Annual: usar renewal_date como âncora obrigatória
+    # Se não tem renewal_date, usar created_at como fallback
     if expense.renewal_date:
         anchor_month = expense.renewal_date.replace(day=1)
     else:
         anchor_month = creation_month
 
     periodicity_months = {
-        Periodicity.MONTHLY: 1,
         Periodicity.QUARTERLY: 3,
         Periodicity.SEMIANNUAL: 6,
         Periodicity.ANNUAL: 12,
     }
     months_interval = periodicity_months.get(expense.periodicity, 1)
 
-    # Calcular diferença em meses entre âncora e mês alvo
     diff = (target_first_day.year - anchor_month.year) * 12 + (
         target_first_day.month - anchor_month.month
     )
@@ -56,9 +62,10 @@ def create_validation_for_creation_month(db: Session, expense: Expense) -> Expen
     """
     Cria uma validação para o mês em que a despesa foi criada, para que apareça
     na aba Validações daquele mês (recorrente ou única).
-    Usa o mês atual do servidor (UTC) para evitar problemas de sessão/timezone.
+    Usa o mês atual no timezone configurado (APP_TIMEZONE).
     """
-    first_day = datetime.now(timezone.utc).date().replace(day=1)
+    tz = ZoneInfo(settings.APP_TIMEZONE)
+    first_day = datetime.now(tz).date().replace(day=1)
 
     existing = db.query(ExpenseValidation).filter(
         and_(
