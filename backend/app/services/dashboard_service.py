@@ -8,6 +8,7 @@ from sqlalchemy import func, and_, or_
 from sqlalchemy.orm import joinedload
 
 from app.models.expense import Expense, ExpenseStatus, ExpenseType
+from app.services import expense_validation_service
 from app.models.category import Category
 from app.models.company import Company
 from app.models.department import Department
@@ -84,24 +85,29 @@ def _get_base_filters(
             filters.append(Expense.department_id == department_id)
 
     # Filtro por mês (formato YYYY-MM)
+    # Recorrentes: incluir em todos os meses. One-time: apenas criadas no mês.
     if month:
         try:
             year, month_num = month.split('-')
             year_int = int(year)
             month_int = int(month_num)
-            # Primeiro dia do mês
             start_date = datetime(year_int, month_int, 1)
-            # Último dia do mês
             if month_int == 12:
                 end_date = datetime(year_int + 1, 1, 1)
             else:
                 end_date = datetime(year_int, month_int + 1, 1)
-            # Filtrar por created_at no mês
-            filters.append(Expense.created_at >= start_date)
-            filters.append(Expense.created_at < end_date)
+            filters.append(
+                or_(
+                    Expense.expense_type == ExpenseType.RECURRING,
+                    and_(
+                        Expense.created_at >= start_date,
+                        Expense.created_at < end_date
+                    )
+                )
+            )
         except (ValueError, IndexError):
             pass  # Ignora formato inválido
-    
+
     return filters
 
 
@@ -114,12 +120,13 @@ def get_dashboard_stats(
 ) -> DashboardStatsResponse:
     """Calcula estatísticas gerais do dashboard"""
     base_filters = _get_base_filters(current_user, company_id, department_id, month)
-    
+    scope_filters = _get_base_filters(current_user, company_id, department_id, month=None)
+
     # Total de todas as despesas ativas
     active_filters = base_filters + [Expense.status == ExpenseStatus.ACTIVE]
     total_value = db.query(func.sum(Expense.value_brl)).filter(and_(*active_filters)).scalar() or Decimal('0')
-    
-    # Total do mês (usar filtro se fornecido, senão mês atual)
+
+    # Total do mês: recorrentes (todas) + one-time (criadas no mês) + canceladas (cobradas no mês)
     if month:
         try:
             year, month_num = month.split('-')
@@ -130,44 +137,53 @@ def get_dashboard_stats(
                 last_day_month = datetime(year_int + 1, 1, 1)
             else:
                 last_day_month = datetime(year_int, month_int + 1, 1)
-            monthly_filters = active_filters + [
-                Expense.created_at >= first_day_month,
-                Expense.created_at < last_day_month
-            ]
         except (ValueError, IndexError):
-            # Se formato inválido, usar mês atual
             now = datetime.now()
             first_day_month = datetime(now.year, now.month, 1)
             if now.month == 12:
                 last_day_month = datetime(now.year + 1, 1, 1)
             else:
                 last_day_month = datetime(now.year, now.month + 1, 1)
-            monthly_filters = active_filters + [
-                Expense.created_at >= first_day_month,
-                Expense.created_at < last_day_month
-            ]
     else:
-        # Sem filtro de mês, usar mês atual
         now = datetime.now()
         first_day_month = datetime(now.year, now.month, 1)
         if now.month == 12:
             last_day_month = datetime(now.year + 1, 1, 1)
         else:
             last_day_month = datetime(now.year, now.month + 1, 1)
-        monthly_filters = active_filters + [
-            Expense.created_at >= first_day_month,
-            Expense.created_at < last_day_month
-        ]
-    monthly_value = db.query(func.sum(Expense.value_brl)).filter(and_(*monthly_filters)).scalar() or Decimal('0')
-    # Incluir despesas canceladas neste mês cujo valor conta no dashboard (já foi processada)
+
+    # Recorrentes ativas: contar todas (sem filtro de created_at)
+    recurring_monthly_filters = scope_filters + [
+        Expense.status == ExpenseStatus.ACTIVE,
+        Expense.expense_type == ExpenseType.RECURRING,
+    ]
+    recurring_value = db.query(func.sum(Expense.value_brl)).filter(
+        and_(*recurring_monthly_filters)
+    ).scalar() or Decimal('0')
+
+    # One-time: apenas criadas no mês
+    one_time_monthly_filters = scope_filters + [
+        Expense.status == ExpenseStatus.ACTIVE,
+        Expense.expense_type == ExpenseType.ONE_TIME,
+        Expense.created_at >= first_day_month,
+        Expense.created_at < last_day_month,
+    ]
+    one_time_value = db.query(func.sum(Expense.value_brl)).filter(
+        and_(*one_time_monthly_filters)
+    ).scalar() or Decimal('0')
+
+    # Despesas canceladas neste mês cujo valor conta no dashboard (já foi processada)
     month_date = first_day_month.date() if hasattr(first_day_month, 'date') else first_day_month
-    cancelled_month_filters = base_filters + [
+    cancelled_month_filters = scope_filters + [
         Expense.status == ExpenseStatus.CANCELLED,
         Expense.cancellation_month == month_date,
         Expense.charged_when_cancelled == True,
     ]
-    cancelled_month_value = db.query(func.sum(Expense.value_brl)).filter(and_(*cancelled_month_filters)).scalar() or Decimal('0')
-    monthly_value = monthly_value + cancelled_month_value
+    cancelled_month_value = db.query(func.sum(Expense.value_brl)).filter(
+        and_(*cancelled_month_filters)
+    ).scalar() or Decimal('0')
+
+    monthly_value = recurring_value + one_time_value + cancelled_month_value
 
     # Média por despesa
     active_count = db.query(func.count(Expense.id)).filter(and_(*active_filters)).scalar() or 0
@@ -355,34 +371,62 @@ def get_expenses_timeline(
     department_id: Optional[UUID] = None,
     months: int = 6
 ) -> TimelineDataResponse:
-    """Retorna dados de evolução de gastos ao longo do tempo"""
-    base_filters = _get_base_filters(current_user, company_id, department_id)
-    active_filters = base_filters + [Expense.status == ExpenseStatus.ACTIVE]
-    
-    # Calcular data inicial
+    """Retorna dados de evolução de gastos ao longo do tempo.
+    Recorrentes: contabilizadas em todos os meses (respeitando periodicidade).
+    One-time: contabilizadas apenas no mês de criação."""
+    scope_filters = _get_base_filters(current_user, company_id, department_id, month=None)
+    active_filters = scope_filters + [Expense.status == ExpenseStatus.ACTIVE]
+
     end_date = datetime.now()
     start_date = end_date - timedelta(days=months * 30)
-    
-    results = db.query(
-        func.date_trunc('month', Expense.created_at).label('month'),
-        func.sum(Expense.value_brl).label('total_value'),
-        func.count(Expense.id).label('count')
-    ).filter(
-        and_(*(active_filters + [Expense.created_at >= start_date]))
-    ).group_by(
-        func.date_trunc('month', Expense.created_at)
-    ).order_by('month').all()
-    
-    data_points = []
-    for result in results:
-        if result.month:
-            month_str = result.month.strftime('%Y-%m')
-            data_points.append(TimelineDataPoint(
-                month=month_str,
-                total_value=result.total_value or Decimal('0'),
-                count=result.count or 0
-            ))
-    
+    start_first = (start_date.replace(day=1).date() if isinstance(start_date, datetime)
+                   else start_date.replace(day=1))
+    end_first = (end_date.replace(day=1).date() if isinstance(end_date, datetime)
+                 else end_date.replace(day=1))
+
+    active_expenses = db.query(Expense).filter(and_(*active_filters)).all()
+
+    month_totals: dict[str, Decimal] = {}
+    month_counts: dict[str, int] = {}
+    current = start_first
+    while current <= end_first:
+        key = current.strftime('%Y-%m')
+        month_totals[key] = Decimal('0')
+        month_counts[key] = 0
+        if current.month == 12:
+            current = date(current.year + 1, 1, 1)
+        else:
+            current = date(current.year, current.month + 1, 1)
+
+    for expense in active_expenses:
+        if expense.expense_type == ExpenseType.RECURRING:
+            creation_month = (
+                expense.created_at.replace(day=1).date()
+                if isinstance(expense.created_at, datetime)
+                else expense.created_at.replace(day=1)
+            ) if expense.created_at else None
+            for month_key in month_totals:
+                year, month_num = month_key.split('-')
+                target_month = date(int(year), int(month_num), 1)
+                if creation_month and target_month <= creation_month:
+                    if target_month == creation_month:
+                        month_totals[month_key] += expense.value_brl or Decimal('0')
+                        month_counts[month_key] += 1
+                elif expense_validation_service.should_create_validation_for_month(expense, target_month):
+                    month_totals[month_key] += expense.value_brl or Decimal('0')
+                    month_counts[month_key] += 1
+        else:
+            if expense.created_at:
+                created = expense.created_at.date() if hasattr(expense.created_at, 'date') else expense.created_at
+                month_key = created.strftime('%Y-%m')
+                if month_key in month_totals:
+                    month_totals[month_key] += expense.value_brl or Decimal('0')
+                    month_counts[month_key] += 1
+
+    data_points = [
+        TimelineDataPoint(month=k, total_value=v, count=month_counts[k])
+        for k, v in sorted(month_totals.items())
+    ]
     return TimelineDataResponse(data=data_points)
 
 

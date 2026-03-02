@@ -1,19 +1,27 @@
 from datetime import date, datetime
+from zoneinfo import ZoneInfo
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.database import SessionLocal
 from app.services import expense_validation_service
+
+
+def _get_current_month_date() -> date:
+    """Retorna o primeiro dia do mês atual no timezone configurado (APP_TIMEZONE)."""
+    tz = ZoneInfo(settings.APP_TIMEZONE)
+    today = datetime.now(tz).date()
+    return today.replace(day=1)
 
 
 def create_monthly_validations_task(month_date: date | None = None) -> dict:
     """
     Tarefa para criar validações mensais baseado na periodicidade das despesas.
-    Se month_date não for fornecido, usa o primeiro dia do mês atual.
+    Se month_date não for fornecido, usa o primeiro dia do mês atual (APP_TIMEZONE).
     Também marca validações atrasadas do mês anterior.
     """
     if month_date is None:
-        today = datetime.now().date()
-        month_date = today.replace(day=1)
+        month_date = _get_current_month_date()
     else:
         # Garantir que é o primeiro dia do mês
         month_date = month_date.replace(day=1)
