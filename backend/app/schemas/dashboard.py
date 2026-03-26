@@ -13,6 +13,7 @@ class DashboardStatsResponse(BaseModel):
     monthly_expenses_value: Decimal
     average_expense_value: Decimal
     pending_validations: int
+    overdue_validations: int
     unread_alerts: int
     active_expenses: int
     recurring_expenses: int

@@ -4,7 +4,6 @@ import {
   LayoutDashboard,
   Receipt,
   CheckSquare,
-  Bell,
   Building2,
   FolderTree,
   Tag,
@@ -27,7 +26,6 @@ const mainNavItems = [
   { icon: LayoutDashboard, label: 'Dashboard', href: '/dashboard' },
   { icon: Receipt, label: 'Despesas', href: '/expenses' },
   { icon: CheckSquare, label: 'Validações', href: '/validations', requireLeader: true },
-  { icon: Bell, label: 'Alertas', href: '/alerts' },
 ];
 
 const adminNavItems = [

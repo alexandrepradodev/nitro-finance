@@ -181,6 +181,7 @@ export interface DashboardStats {
   monthly_expenses_value: number;
   average_expense_value: number;
   pending_validations: number;
+  overdue_validations: number;
   unread_alerts: number;
   active_expenses: number;
   recurring_expenses: number;

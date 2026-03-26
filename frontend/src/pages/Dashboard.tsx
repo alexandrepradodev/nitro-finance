@@ -3,7 +3,6 @@ import { useQuery } from '@tanstack/react-query';
 import {
   DollarSign,
   CheckCircle2,
-  Bell,
   TrendingUp,
   Calendar,
   Repeat,
@@ -51,21 +50,21 @@ function MetricCard({
   loading?: boolean;
 }) {
   return (
-    <Card className="group glow-primary gradient-border transition-all duration-200 hover:-translate-y-0.5">
+    <Card className="group border-border/60 bg-card/70 backdrop-blur-sm shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-primary/10">
       <CardContent className="p-6">
         <div className="flex items-start justify-between">
           <div className="flex-1">
-            <p className="text-sm font-medium text-muted-foreground">{title}</p>
+            <p className="text-sm font-medium text-muted-foreground/90">{title}</p>
             {loading ? (
               <Skeleton className="h-8 w-32 mt-2" />
             ) : (
-              <p className="text-2xl font-bold mt-2 tabular-nums">{value}</p>
+              <p className="text-2xl font-bold mt-2 tabular-nums text-foreground">{value}</p>
             )}
             {description && (
               <p className="text-xs text-muted-foreground mt-1">{description}</p>
             )}
           </div>
-          <div className="p-3 bg-gradient-to-br from-primary/20 to-primary/5 rounded-xl transition-all duration-300 group-hover:from-primary/30 group-hover:to-primary/10 group-hover:shadow-md group-hover:shadow-primary/10">
+          <div className="p-3 bg-gradient-to-br from-primary/25 to-primary/10 rounded-xl transition-all duration-300 group-hover:from-primary/35 group-hover:to-primary/15">
             <Icon className="h-5 w-5 text-primary" />
           </div>
         </div>
@@ -155,21 +154,24 @@ export default function DashboardPage() {
   );
 
   const clearFilters = () => setFilters({});
+  const currentMonthLabel = formatMonth(
+    `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
+  );
 
   return (
     <div className="space-y-8 animate-fade-in">
       {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="rounded-xl border border-border/60 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent p-6">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
           <p className="text-muted-foreground mt-1">
-            Visão geral das despesas e atividades
+            Visão executiva das despesas com base nas validações do mês
           </p>
         </div>
       </div>
 
       {/* Filters */}
-      <Card>
+      <Card className="border-border/60 bg-card/70 backdrop-blur-sm">
         <CardContent className="p-4">
           <div className="flex flex-wrap items-center gap-3">
             <Filter className="h-4 w-4 text-muted-foreground" />
@@ -242,18 +244,18 @@ export default function DashboardPage() {
       {/* Metric Cards - Grid 2x4 */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <MetricCard
-          title="Total de Despesas"
+          title="Total do Ano"
           value={formatCurrency(convertToCurrency(stats?.total_expenses_value || 0), currency)}
           icon={DollarSign}
           loading={statsLoading}
-          description="Todas as despesas ativas"
+          description="Ano atual (acumulado de janeiro até agora)"
         />
         <MetricCard
           title="Total Mensal"
           value={formatCurrency(convertToCurrency(stats?.monthly_expenses_value || 0), currency)}
           icon={Calendar}
           loading={statsLoading}
-          description="Despesas do mês atual"
+          description={`Mês atual: ${currentMonthLabel}`}
         />
         <MetricCard
           title="Média por Despesa"
@@ -277,11 +279,11 @@ export default function DashboardPage() {
           description="Aguardando validação"
         />
         <MetricCard
-          title="Alertas Não Lidos"
-          value={stats?.unread_alerts || 0}
-          icon={Bell}
+          title="Validações Atrasadas"
+          value={stats?.overdue_validations || 0}
+          icon={AlertTriangle}
           loading={statsLoading}
-          description="Novos alertas"
+          description="Pendentes fora do prazo"
         />
         <MetricCard
           title="Despesas Ativas"
@@ -300,11 +302,11 @@ export default function DashboardPage() {
       </div>
 
       {/* Gráfico de Linha - Evolução */}
-      <Card>
+      <Card className="border-border/60 bg-card/70 backdrop-blur-sm">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <LineChartIcon className="h-5 w-5" />
-            Evolução de Gastos (Últimos 6 Meses)
+            Despesas Previstas por Mês (Últimos 6 Meses)
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -324,7 +326,7 @@ export default function DashboardPage() {
 
       {/* Gráficos - Pizza e Top Despesas */}
       <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
+        <Card className="border-border/60 bg-card/70 backdrop-blur-sm">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <PieChartIcon className="h-5 w-5" />
@@ -346,7 +348,7 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="border-border/60 bg-card/70 backdrop-blur-sm">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <BarChart3 className="h-5 w-5" />
@@ -371,7 +373,7 @@ export default function DashboardPage() {
 
       {/* Gráficos - Empresas e Setores */}
       <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
+        <Card className="border-border/60 bg-card/70 backdrop-blur-sm">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <BarChart3 className="h-5 w-5" />
@@ -402,7 +404,7 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="border-border/60 bg-card/70 backdrop-blur-sm">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <BarChart3 className="h-5 w-5" />
@@ -437,7 +439,7 @@ export default function DashboardPage() {
       {/* Recent Data */}
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Recent Expenses */}
-        <Card>
+        <Card className="border-border/60 bg-card/70 backdrop-blur-sm">
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="text-lg">Despesas Recentes</CardTitle>
             <Link to="/expenses" className="text-sm text-primary hover:underline">
@@ -484,7 +486,7 @@ export default function DashboardPage() {
         </Card>
 
         {/* Recent Alerts */}
-        <Card>
+        <Card className="border-border/60 bg-card/70 backdrop-blur-sm">
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="text-lg">Alertas Recentes</CardTitle>
             <Link to="/alerts" className="text-sm text-primary hover:underline">
