@@ -557,6 +557,25 @@ export const validationsApi = {
     const { data } = await apiClient.post<ExpenseValidation>(`/expense-validations/${id}/reject`, body ?? { charged_this_month: false });
     return data;
   },
+
+  adminCancelApproval: async (id: string): Promise<ExpenseValidation> => {
+    if (USE_MOCK) {
+      await delay();
+      const index = mockValidations.findIndex(v => v.id === id);
+      if (index !== -1) {
+        mockValidations[index] = {
+          ...mockValidations[index],
+          status: 'rejected',
+          validated_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+        return mockValidations[index];
+      }
+      throw new Error('Validation not found');
+    }
+    const { data } = await apiClient.post<ExpenseValidation>(`/expense-validations/${id}/admin-cancel-approval`);
+    return data;
+  },
 };
 
 // Alerts API
@@ -686,6 +705,7 @@ export const dashboardApi = {
     const params = new URLSearchParams();
     if (filters?.company_id) params.append('company_id', filters.company_id);
     if (filters?.department_id) params.append('department_id', filters.department_id);
+    if (filters?.month) params.append('month', filters.month);
     params.append('months', months.toString());
     const { data } = await apiClient.get<TimelineDataResponse>(`/dashboard/expenses-timeline?${params.toString()}`);
     return data;
@@ -744,7 +764,20 @@ export const dashboardApi = {
     if (filters?.company_id) expenseFilters.company_ids = [filters.company_id];
     if (filters?.department_id) expenseFilters.department_ids = [filters.department_id];
     const expenses = await expensesApi.getAll(expenseFilters);
-    return expenses.slice(0, limit);
+    let filteredByMonth = expenses;
+    if (filters?.month) {
+      const [yearStr, monthStr] = filters.month.split('-');
+      const year = Number(yearStr);
+      const month = Number(monthStr);
+      if (!Number.isNaN(year) && !Number.isNaN(month)) {
+        filteredByMonth = expenses.filter((expense) => {
+          if (!expense.created_at) return false;
+          const createdAt = new Date(expense.created_at);
+          return createdAt.getFullYear() === year && createdAt.getMonth() + 1 === month;
+        });
+      }
+    }
+    return filteredByMonth.slice(0, limit);
   },
 
   getRecentAlerts: async (limit: number = 5): Promise<Alert[]> => {

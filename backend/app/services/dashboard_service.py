@@ -111,6 +111,32 @@ def _get_base_filters(
     return filters
 
 
+def _parse_month_start(month: Optional[str]) -> Optional[date]:
+    if not month:
+        return None
+    try:
+        year, month_num = month.split('-')
+        return date(int(year), int(month_num), 1)
+    except (ValueError, IndexError):
+        return None
+
+
+def _get_approved_validation_filters(
+    current_user: User,
+    company_id: Optional[UUID] = None,
+    department_id: Optional[UUID] = None,
+    month: Optional[str] = None,
+):
+    filters = [
+        *_get_base_filters(current_user, company_id, department_id, month=None),
+        ExpenseValidation.status == ValidationStatus.APPROVED,
+    ]
+    month_start = _parse_month_start(month)
+    if month_start:
+        filters.append(ExpenseValidation.validation_month == month_start)
+    return filters
+
+
 def get_dashboard_stats(
     db: Session,
     current_user: User,
@@ -122,67 +148,47 @@ def get_dashboard_stats(
     base_filters = _get_base_filters(current_user, company_id, department_id, month)
     scope_filters = _get_base_filters(current_user, company_id, department_id, month=None)
 
-    # Mes atual (sempre) e mes alvo (filtrado ou atual)
+    # Mês atual (sempre) e ano alvo (do filtro ou atual)
     now = datetime.now()
     current_month_date = date(now.year, now.month, 1)
-    if month:
-        try:
-            year, month_num = month.split('-')
-            year_int = int(year)
-            month_int = int(month_num)
-            target_month_date = date(year_int, month_int, 1)
-        except (ValueError, IndexError):
-            target_month_date = current_month_date
-    else:
-        target_month_date = current_month_date
+    month_start = _parse_month_start(month)
+    target_year = month_start.year if month_start else current_month_date.year
 
-    def _sum_predicted_for_month(target: date) -> Decimal:
-        if target.month == 12:
-            next_target = date(target.year + 1, 1, 1)
-        else:
-            next_target = date(target.year, target.month + 1, 1)
-        start_dt = datetime(target.year, target.month, 1)
-        end_dt = datetime(next_target.year, next_target.month, 1)
+    year_start = date(target_year, 1, 1)
+    year_end = date(target_year, 12, 1)
 
-        recurring_total = db.query(func.sum(Expense.value_brl)).filter(and_(
-            *scope_filters,
-            Expense.status == ExpenseStatus.ACTIVE,
-            Expense.expense_type == ExpenseType.RECURRING,
-            Expense.renewal_date.isnot(None),
-            Expense.renewal_date >= target,
-            Expense.renewal_date < next_target,
-        )).scalar() or Decimal('0')
+    approved_year_filters = [
+        *scope_filters,
+        ExpenseValidation.status == ValidationStatus.APPROVED,
+        ExpenseValidation.validation_month >= year_start,
+        ExpenseValidation.validation_month <= year_end,
+    ]
 
-        one_time_total = db.query(func.sum(Expense.value_brl)).filter(and_(
-            *scope_filters,
-            Expense.status == ExpenseStatus.ACTIVE,
-            Expense.expense_type == ExpenseType.ONE_TIME,
-            Expense.created_at >= start_dt,
-            Expense.created_at < end_dt,
-        )).scalar() or Decimal('0')
+    # Total do Ano: soma de validações APROVADAS no ano do filtro (ou ano atual sem filtro)
+    total_value = db.query(func.sum(Expense.value_brl)).join(
+        ExpenseValidation, ExpenseValidation.expense_id == Expense.id
+    ).filter(and_(*approved_year_filters)).scalar() or Decimal('0')
 
-        cancelled_total = db.query(func.sum(Expense.value_brl)).filter(and_(
-            *scope_filters,
-            Expense.status == ExpenseStatus.CANCELLED,
-            Expense.cancellation_month == target,
-            Expense.charged_when_cancelled == True,
-        )).scalar() or Decimal('0')
+    # Total Mensal: soma de validações APROVADAS.
+    # - com month selecionado: apenas o mês informado
+    # - sem month: soma de todo o histórico aprovado
+    approved_monthly_filters = _get_approved_validation_filters(
+        current_user=current_user,
+        company_id=company_id,
+        department_id=department_id,
+        month=month,
+    )
 
-        return recurring_total + one_time_total + cancelled_total
-
-    # Total de Despesas: acumulado do ano atual (jan até mês atual), ignora filtro de mês
-    total_value = Decimal('0')
-    for month_index in range(1, current_month_date.month + 1):
-        total_value += _sum_predicted_for_month(date(current_month_date.year, month_index, 1))
-
-    # Total Mensal: valor previsto do mes atual (ignora filtro de mês)
-    monthly_value = _sum_predicted_for_month(current_month_date)
+    monthly_value = db.query(func.sum(Expense.value_brl)).join(
+        ExpenseValidation, ExpenseValidation.expense_id == Expense.id
+    ).filter(and_(*approved_monthly_filters)).scalar() or Decimal('0')
 
     # Média por despesa e demais contagens (respeitam filtro de mês)
     active_filters = base_filters + [Expense.status == ExpenseStatus.ACTIVE]
 
     active_count = db.query(func.count(Expense.id)).filter(and_(*active_filters)).scalar() or 0
-    average_value = total_value / active_count if active_count > 0 else Decimal('0')
+    filtered_total_value = db.query(func.sum(Expense.value_brl)).filter(and_(*active_filters)).scalar() or Decimal('0')
+    average_value = filtered_total_value / active_count if active_count > 0 else Decimal('0')
     
     # Despesas recorrentes vs únicas
     recurring_count = db.query(func.count(Expense.id)).filter(
@@ -214,6 +220,7 @@ def get_dashboard_stats(
         monthly_expenses_value=monthly_value,
         average_expense_value=average_value,
         pending_validations=0,  # Será calculado no endpoint
+        overdue_validations=0,  # Será calculado no endpoint
         unread_alerts=0,  # Será calculado no endpoint
         active_expenses=active_count,
         recurring_expenses=recurring_count,
@@ -232,18 +239,24 @@ def get_expenses_by_category(
     month: Optional[str] = None
 ) -> CategoryExpenseResponse:
     """Agrega despesas por categoria"""
-    base_filters = _get_base_filters(current_user, company_id, department_id, month)
-    active_filters = base_filters + [Expense.status == ExpenseStatus.ACTIVE]
+    approved_filters = _get_approved_validation_filters(
+        current_user=current_user,
+        company_id=company_id,
+        department_id=department_id,
+        month=month,
+    )
     
     results = db.query(
         Expense.category_id,
         Category.name.label('category_name'),
         func.sum(Expense.value_brl).label('total_value'),
-        func.count(Expense.id).label('count')
+        func.count(ExpenseValidation.id).label('count')
+    ).join(
+        ExpenseValidation, ExpenseValidation.expense_id == Expense.id
     ).join(
         Category, Expense.category_id == Category.id
     ).filter(
-        and_(*active_filters)
+        and_(*approved_filters)
     ).group_by(
         Expense.category_id, Category.name
     ).order_by(
@@ -276,18 +289,24 @@ def get_expenses_by_company(
     month: Optional[str] = None
 ) -> CompanyExpenseResponse:
     """Agrega despesas por empresa"""
-    base_filters = _get_base_filters(current_user, company_id, department_id, month)
-    active_filters = base_filters + [Expense.status == ExpenseStatus.ACTIVE]
+    approved_filters = _get_approved_validation_filters(
+        current_user=current_user,
+        company_id=company_id,
+        department_id=department_id,
+        month=month,
+    )
     
     results = db.query(
         Expense.company_id,
         Company.name.label('company_name'),
         func.sum(Expense.value_brl).label('total_value'),
-        func.count(Expense.id).label('count')
+        func.count(ExpenseValidation.id).label('count')
+    ).join(
+        ExpenseValidation, ExpenseValidation.expense_id == Expense.id
     ).join(
         Company, Expense.company_id == Company.id
     ).filter(
-        and_(*active_filters)
+        and_(*approved_filters)
     ).group_by(
         Expense.company_id, Company.name
     ).order_by(
@@ -320,21 +339,27 @@ def get_expenses_by_department(
     month: Optional[str] = None
 ) -> DepartmentExpenseResponse:
     """Agrega despesas por setor"""
-    base_filters = _get_base_filters(current_user, company_id, department_id, month)
-    active_filters = base_filters + [Expense.status == ExpenseStatus.ACTIVE]
+    approved_filters = _get_approved_validation_filters(
+        current_user=current_user,
+        company_id=company_id,
+        department_id=department_id,
+        month=month,
+    )
     
     results = db.query(
         Expense.department_id,
         Department.name.label('department_name'),
         Company.name.label('company_name'),
         func.sum(Expense.value_brl).label('total_value'),
-        func.count(Expense.id).label('count')
+        func.count(ExpenseValidation.id).label('count')
+    ).join(
+        ExpenseValidation, ExpenseValidation.expense_id == Expense.id
     ).join(
         Department, Expense.department_id == Department.id
     ).join(
         Company, Expense.company_id == Company.id
     ).filter(
-        and_(*active_filters)
+        and_(*approved_filters)
     ).group_by(
         Expense.department_id, Department.name, Company.name
     ).order_by(
@@ -364,18 +389,23 @@ def get_expenses_timeline(
     current_user: User,
     company_id: Optional[UUID] = None,
     department_id: Optional[UUID] = None,
-    months: int = 6
+    months: int = 6,
+    month: Optional[str] = None,
 ) -> TimelineDataResponse:
-    """Retorna dados de evolução de gastos ao longo do tempo.
-    Usa expense_validations (PENDING + APPROVED) como fonte dos valores previstos."""
+    """Retorna dados de evolução de gastos ao longo do tempo com validações aprovadas."""
     scope_filters = _get_base_filters(current_user, company_id, department_id, month=None)
 
-    end_date = datetime.now()
-    start_date = end_date - timedelta(days=months * 30)
-    start_first = (start_date.replace(day=1).date() if isinstance(start_date, datetime)
-                   else start_date.replace(day=1))
-    end_first = (end_date.replace(day=1).date() if isinstance(end_date, datetime)
-                 else end_date.replace(day=1))
+    now = datetime.now()
+    end_first = date(now.year, now.month, 1)
+    if month:
+        try:
+            year, month_num = month.split('-')
+            end_first = date(int(year), int(month_num), 1)
+        except (ValueError, IndexError):
+            pass
+
+    start_date = end_first - timedelta(days=months * 30)
+    start_first = start_date.replace(day=1)
 
     results = db.query(
         ExpenseValidation.validation_month,
@@ -385,10 +415,9 @@ def get_expenses_timeline(
         Expense, ExpenseValidation.expense_id == Expense.id
     ).filter(and_(
         *scope_filters,
-        Expense.status == ExpenseStatus.ACTIVE,
         ExpenseValidation.validation_month >= start_first,
         ExpenseValidation.validation_month <= end_first,
-        ExpenseValidation.status != ValidationStatus.REJECTED,
+        ExpenseValidation.status == ValidationStatus.APPROVED,
     )).group_by(
         ExpenseValidation.validation_month
     ).all()
@@ -427,15 +456,23 @@ def get_top_expenses(
     month: Optional[str] = None
 ) -> TopExpenseResponse:
     """Retorna as maiores despesas"""
-    base_filters = _get_base_filters(current_user, company_id, department_id, month)
-    active_filters = base_filters + [Expense.status == ExpenseStatus.ACTIVE]
+    approved_filters = _get_approved_validation_filters(
+        current_user=current_user,
+        company_id=company_id,
+        department_id=department_id,
+        month=month,
+    )
     
     expenses = db.query(Expense).options(
         joinedload(Expense.category),
         joinedload(Expense.company),
         joinedload(Expense.department),
+    ).join(
+        ExpenseValidation, ExpenseValidation.expense_id == Expense.id
     ).filter(
-        and_(*active_filters)
+        and_(*approved_filters)
+    ).distinct(
+        Expense.id
     ).order_by(
         Expense.value_brl.desc()
     ).limit(limit).all()

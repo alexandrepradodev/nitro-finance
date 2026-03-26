@@ -55,6 +55,7 @@ export interface Category {
 // Expense Types (backend)
 export type ExpenseType = 'recurring' | 'one_time';
 export type ExpenseStatus = 'active' | 'cancelled';
+export type ReviewStatus = 'normal' | 'review';
 export type Periodicity = 'monthly' | 'quarterly' | 'semiannual' | 'annual';
 export type Currency = 'BRL' | 'USD';
 export type PaymentMethod = 'credit_card' | 'debit_card' | 'boleto' | 'pix' | 'transfer';
@@ -91,6 +92,7 @@ export interface Expense {
   password?: string;
   notes?: string;
   status: ExpenseStatus;
+  review_status?: ReviewStatus;
   cancellation_month?: string;
   charged_when_cancelled?: boolean;
   created_at: string;
@@ -132,7 +134,7 @@ export interface ExpenseFormData {
 }
 
 /** Payload para atualização de despesa (inclui status para alteração na lista) */
-export type ExpenseUpdatePayload = Partial<ExpenseFormData> & { status?: ExpenseStatus };
+export type ExpenseUpdatePayload = Partial<ExpenseFormData> & { status?: ExpenseStatus; review_status?: ReviewStatus };
 
 // Validation Types (backend: expense_validations)
 export type ValidationStatus = 'pending' | 'approved' | 'rejected';

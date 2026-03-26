@@ -385,6 +385,44 @@ def reject(
     return validation
 
 
+def admin_cancel_approved_validation(
+    db: Session,
+    validation_id: UUID,
+    validator_id: UUID,
+) -> ExpenseValidation:
+    """
+    Admin: cancela uma aprovação feita por engano.
+    Converte APPROVED -> REJECTED e cancela a despesa com impacto financeiro no mês da validação.
+    """
+    validation = get_by_id(db, validation_id)
+    if not validation:
+        raise ValueError("Validação não encontrada")
+    if validation.status != ValidationStatus.APPROVED:
+        raise ValueError("Apenas validações aprovadas podem ser canceladas por admin")
+
+    expense = db.query(Expense).filter(Expense.id == validation.expense_id).first()
+    if not expense:
+        raise ValueError("Despesa não encontrada")
+
+    now = datetime.now(timezone.utc)
+
+    validation.status = ValidationStatus.REJECTED
+    validation.validator_id = validator_id
+    validation.validated_at = now
+    validation.updated_at = now
+
+    expense.status = ExpenseStatus.CANCELLED
+    expense.cancellation_month = validation.validation_month
+    expense.charged_when_cancelled = True
+    expense.cancelled_at = now
+    expense.cancelled_by_id = validator_id
+    expense.updated_at = now
+
+    db.commit()
+    db.refresh(validation)
+    return validation
+
+
 def get_history(
     db: Session,
     status: ValidationStatus | None = None,

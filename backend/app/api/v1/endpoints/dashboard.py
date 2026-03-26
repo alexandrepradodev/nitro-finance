@@ -159,6 +159,7 @@ def get_expenses_by_department(
 def get_expenses_timeline(
     company_id: UUID | None = Query(None, description="Filtrar por empresa"),
     department_id: UUID | None = Query(None, description="Filtrar por setor"),
+    month: str | None = Query(None, description="Mês âncora da timeline (formato YYYY-MM)"),
     months: int = Query(6, ge=1, le=12, description="Número de meses"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -166,7 +167,7 @@ def get_expenses_timeline(
     """Retorna dados de evolução de gastos ao longo do tempo"""
     validate_dashboard_filters(current_user, company_id, department_id)
     return dashboard_service.get_expenses_timeline(
-        db, current_user, company_id, department_id, months
+        db, current_user, company_id, department_id, months, month
     )
 
 

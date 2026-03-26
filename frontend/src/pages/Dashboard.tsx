@@ -149,9 +149,12 @@ export default function DashboardPage() {
   );
 
   const clearFilters = () => setFilters({});
-  const currentMonthLabel = formatMonth(
-    `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
-  );
+  const yearlyCardDescription = filters.month
+    ? `Aprovadas no ano de ${formatMonth(filters.month)}`
+    : 'Aprovadas no ano atual';
+  const monthlyCardDescription = filters.month
+    ? `Aprovadas em ${formatMonth(filters.month)}`
+    : 'Aprovadas em todos os meses';
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -243,14 +246,14 @@ export default function DashboardPage() {
           value={formatCurrency(convertToCurrency(stats?.total_expenses_value || 0), currency)}
           icon={DollarSign}
           loading={statsLoading}
-          description="Ano atual (acumulado de janeiro até agora)"
+          description={yearlyCardDescription}
         />
         <MetricCard
           title="Total Mensal"
           value={formatCurrency(convertToCurrency(stats?.monthly_expenses_value || 0), currency)}
           icon={Calendar}
           loading={statsLoading}
-          description={`Mês atual: ${currentMonthLabel}`}
+          description={monthlyCardDescription}
         />
         <MetricCard
           title="Média por Despesa"
@@ -301,7 +304,7 @@ export default function DashboardPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <LineChartIcon className="h-5 w-5" />
-            Despesas Previstas por Mês (Últimos 6 Meses)
+            Despesas Aprovadas por Mês (Últimos 6 Meses)
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -325,7 +328,7 @@ export default function DashboardPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <PieChartIcon className="h-5 w-5" />
-              Distribuição por Categoria
+              Aprovadas por Categoria
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -347,7 +350,7 @@ export default function DashboardPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <BarChart3 className="h-5 w-5" />
-              Top 10 Maiores Despesas
+              Top 10 Maiores Despesas Aprovadas
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -372,7 +375,7 @@ export default function DashboardPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <BarChart3 className="h-5 w-5" />
-              Gastos por Empresa
+              Aprovadas por Empresa
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -403,7 +406,7 @@ export default function DashboardPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <BarChart3 className="h-5 w-5" />
-              Gastos por Setor
+              Aprovadas por Setor
             </CardTitle>
           </CardHeader>
           <CardContent>
