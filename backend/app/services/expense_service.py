@@ -262,6 +262,8 @@ def update(
         expense.notes = data.notes
     if data.status is not None:
         expense.status = data.status
+    if data.review_status is not None:
+        expense.review_status = data.review_status
 
     expense.updated_at = datetime.now(timezone.utc)
     db.commit()

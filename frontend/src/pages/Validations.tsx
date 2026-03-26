@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, XCircle, Loader2, Calendar, PartyPopper, Clock, User, Filter, Download } from 'lucide-react';
-import { validationsApi, companiesApi, usersApi, departmentsApi } from '@/services/api';
+import { validationsApi, companiesApi, usersApi, departmentsApi, expensesApi } from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -44,9 +44,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useToast } from '@/hooks/use-toast';
 import { formatCurrency, formatMonth, formatDate } from '@/lib/formatters';
-import type { ValidationStatus, ExpenseValidation } from '@/types';
+import type { ValidationStatus, ExpenseValidation, ReviewStatus } from '@/types';
 
 function getMonthOptions() {
   const options = [];
@@ -132,10 +133,13 @@ export default function ValidationsPage() {
   const [activeTab, setActiveTab] = useState<ValidationStatus | 'all'>('pending');
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [rejectChargedChoice, setRejectChargedChoice] = useState<boolean | null>(null);
+  const [cancelApprovedId, setCancelApprovedId] = useState<string | null>(null);
+  const [updatingReviewExpenseId, setUpdatingReviewExpenseId] = useState<string | null>(null);
   const [filters, setFilters] = useState<{
     company_id?: string;
     owner_id?: string;
     department_id?: string;
+    review_status?: ReviewStatus;
     service_name?: string;
   }>({});
 
@@ -156,6 +160,13 @@ export default function ValidationsPage() {
     queryKey: ['departments'],
     queryFn: () => departmentsApi.getAll(),
   });
+
+  const filteredDepartments = useMemo(() => {
+    if (!filters.company_id) return [];
+    return (departments ?? []).filter(
+      (department) => department.is_active && department.company_id === filters.company_id
+    );
+  }, [departments, filters.company_id]);
 
   // Detectar se é mês futuro
   const isFutureMonth = (() => {
@@ -216,13 +227,17 @@ export default function ValidationsPage() {
       if (filters.department_id && validation.expense?.department?.id !== filters.department_id) {
         return false;
       }
+      if (filters.review_status) {
+        const reviewStatus = (validation.expense?.review_status ?? 'normal') as ReviewStatus;
+        if (reviewStatus !== filters.review_status) return false;
+      }
       if (filters.service_name) {
         const term = filters.service_name.toLowerCase();
         if (!validation.expense?.service_name?.toLowerCase().includes(term)) return false;
       }
       return true;
     });
-  }, [validations, filters.company_id, filters.owner_id, filters.department_id, filters.service_name]);
+  }, [validations, filters.company_id, filters.owner_id, filters.department_id, filters.review_status, filters.service_name]);
 
   // Calcular totais
   const totals = useMemo(() => {
@@ -307,6 +322,55 @@ export default function ValidationsPage() {
     },
   });
 
+  const reviewMutation = useMutation({
+    mutationFn: ({ expenseId, reviewStatus }: { expenseId: string; reviewStatus: ReviewStatus }) =>
+      expensesApi.update(expenseId, { review_status: reviewStatus }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['validations'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['validations-history'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['validations-pending'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['validations-predicted'], exact: false });
+      setUpdatingReviewExpenseId(null);
+      toast({
+        title: 'Revisão atualizada',
+        description: 'O status de revisão foi salvo com sucesso.',
+      });
+    },
+    onError: () => {
+      setUpdatingReviewExpenseId(null);
+      toast({
+        variant: 'destructive',
+        title: 'Erro ao atualizar revisão',
+        description: 'Não foi possível atualizar o status de revisão.',
+      });
+    },
+  });
+
+  const adminCancelApprovalMutation = useMutation({
+    mutationFn: validationsApi.adminCancelApproval,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['validations'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['validations-history'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['validations-pending'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['validations-predicted'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['expenses-timeline'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'], exact: false });
+      setCancelApprovedId(null);
+      toast({
+        title: 'Aprovação cancelada',
+        description: 'A validação foi convertida para rejeitada.',
+      });
+    },
+    onError: () => {
+      toast({
+        variant: 'destructive',
+        title: 'Erro ao cancelar aprovação',
+        description: 'Não foi possível cancelar esta aprovação.',
+      });
+    },
+  });
+
   const handleApprove = (id: string) => {
     approveMutation.mutate(id);
   };
@@ -314,6 +378,20 @@ export default function ValidationsPage() {
   const handleReject = () => {
     if (rejectingId != null && rejectChargedChoice !== null) {
       rejectMutation.mutate({ id: rejectingId, charged_this_month: rejectChargedChoice });
+    }
+  };
+
+  const handleToggleReview = (validation: ExpenseValidation) => {
+    if (!validation.expense?.id) return;
+    const currentReview = (validation.expense.review_status ?? 'normal') as ReviewStatus;
+    const nextReview: ReviewStatus = currentReview === 'review' ? 'normal' : 'review';
+    setUpdatingReviewExpenseId(validation.expense.id);
+    reviewMutation.mutate({ expenseId: validation.expense.id, reviewStatus: nextReview });
+  };
+
+  const handleAdminCancelApproval = () => {
+    if (cancelApprovedId) {
+      adminCancelApprovalMutation.mutate(cancelApprovedId);
     }
   };
 
@@ -329,7 +407,7 @@ export default function ValidationsPage() {
 
   const handleCompanyChange = (value: string) => {
     const companyId = value === 'all' ? undefined : value;
-    setFilters({ ...filters, company_id: companyId });
+    setFilters({ ...filters, company_id: companyId, department_id: undefined });
   };
 
   const handleOwnerChange = (value: string) => {
@@ -340,6 +418,11 @@ export default function ValidationsPage() {
   const handleDepartmentChange = (value: string) => {
     const departmentId = value === 'all' ? undefined : value;
     setFilters({ ...filters, department_id: departmentId });
+  };
+
+  const handleReviewStatusChange = (value: string) => {
+    const reviewStatus = value === 'all' ? undefined : (value as ReviewStatus);
+    setFilters({ ...filters, review_status: reviewStatus });
   };
 
   const clearFilters = () => {
@@ -502,21 +585,59 @@ export default function ValidationsPage() {
               <Select
                 value={filters.department_id ?? 'all'}
                 onValueChange={handleDepartmentChange}
+                disabled={!filters.company_id}
               >
-                <SelectTrigger className="h-9 w-[200px]">
-                  <SelectValue placeholder="Setor" />
-                </SelectTrigger>
+                {!filters.company_id ? (
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="inline-block">
+                          <SelectTrigger className="h-9 w-[200px]" disabled>
+                            <SelectValue placeholder="Selecione uma empresa primeiro" />
+                          </SelectTrigger>
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        Selecione uma empresa primeiro
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                ) : (
+                  <SelectTrigger className="h-9 w-[200px]">
+                    <SelectValue placeholder="Setor" />
+                  </SelectTrigger>
+                )}
                 <SelectContent>
-                  <SelectItem value="all">Todos os setores</SelectItem>
-                  {departments?.filter((d) => d.is_active)?.map((department) => (
-                    <SelectItem key={department.id} value={department.id}>
-                      {department.name}
-                    </SelectItem>
-                  ))}
+                  {filters.company_id ? (
+                    <>
+                      <SelectItem value="all">Todos os setores</SelectItem>
+                      {filteredDepartments.map((department) => (
+                        <SelectItem key={department.id} value={department.id}>
+                          {department.name}
+                        </SelectItem>
+                      ))}
+                    </>
+                  ) : null}
                 </SelectContent>
               </Select>
             </div>
-            {(filters.company_id || filters.owner_id || filters.department_id || filters.service_name) && (
+            <div className="flex flex-col gap-1">
+              <Label className="text-xs text-muted-foreground">Revisão</Label>
+              <Select
+                value={filters.review_status ?? 'all'}
+                onValueChange={handleReviewStatusChange}
+              >
+                <SelectTrigger className="h-9 w-[200px]">
+                  <SelectValue placeholder="Revisão" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
+                  <SelectItem value="normal">Normal</SelectItem>
+                  <SelectItem value="review">Revisão</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {(filters.company_id || filters.owner_id || filters.department_id || filters.review_status || filters.service_name) && (
               <Button variant="ghost" onClick={clearFilters} className="text-muted-foreground">
                 Limpar filtros
               </Button>
@@ -549,6 +670,7 @@ export default function ValidationsPage() {
                       <TableHead className="font-semibold">Responsável</TableHead>
                       <TableHead className="font-semibold text-right">Valor</TableHead>
                       <TableHead className="font-semibold">Status</TableHead>
+                      <TableHead className="font-semibold">Revisão</TableHead>
                       <TableHead className="font-semibold">Mês</TableHead>
                       <TableHead className="font-semibold">Validado por</TableHead>
                       <TableHead className="font-semibold">Data</TableHead>
@@ -565,6 +687,7 @@ export default function ValidationsPage() {
                         <TableCell><Skeleton className="h-4 w-24" /></TableCell>
                         <TableCell className="text-right"><Skeleton className="h-4 w-20 ml-auto" /></TableCell>
                         <TableCell><Skeleton className="h-5 w-20" /></TableCell>
+                        <TableCell><Skeleton className="h-8 w-24" /></TableCell>
                         <TableCell><Skeleton className="h-4 w-16" /></TableCell>
                         <TableCell><Skeleton className="h-4 w-24" /></TableCell>
                         <TableCell><Skeleton className="h-4 w-20" /></TableCell>
@@ -617,6 +740,7 @@ export default function ValidationsPage() {
                         <TableHead className="font-semibold">Responsável</TableHead>
                         <TableHead className="font-semibold text-right">Valor</TableHead>
                         <TableHead className="font-semibold">Status</TableHead>
+                        <TableHead className="font-semibold">Revisão</TableHead>
                         <TableHead className="font-semibold">Mês</TableHead>
                         <TableHead className="font-semibold">Data de renovação</TableHead>
                         <TableHead className="font-semibold">Validado por</TableHead>
@@ -675,6 +799,24 @@ export default function ValidationsPage() {
                           </TableCell>
                           <TableCell>
                             {getStatusBadge(validation.status, validation.is_overdue, validation.is_predicted)}
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleToggleReview(validation)}
+                              disabled={updatingReviewExpenseId === validation.expense?.id}
+                              className={`h-6 px-2 rounded-full text-xs font-medium border ${
+                                (validation.expense?.review_status ?? 'normal') === 'review'
+                                  ? 'border-yellow-500 text-black bg-yellow-400 hover:bg-yellow-500'
+                                  : 'border-border text-muted-foreground bg-background hover:bg-muted'
+                              }`}
+                            >
+                              {updatingReviewExpenseId === validation.expense?.id ? (
+                                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                              ) : null}
+                              {(validation.expense?.review_status ?? 'normal') === 'review' ? 'Revisão' : 'Normal'}
+                            </Button>
                           </TableCell>
                           <TableCell>
                             <span>{formatMonth(validation.validation_month)}</span>
@@ -738,6 +880,20 @@ export default function ValidationsPage() {
                                   Cancelar
                                 </Button>
                               </div>
+                            ) : validation.status === 'approved' &&
+                              !validation.is_predicted &&
+                              validation.id &&
+                              (user?.role === 'finance_admin' || user?.role === 'system_admin') ? (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setCancelApprovedId(validation.id!)}
+                                disabled={adminCancelApprovalMutation.isPending}
+                                className="border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                              >
+                                <XCircle className="h-3 w-3 mr-1" />
+                                Cancelar aprovação
+                              </Button>
                             ) : (
                               <span className="text-muted-foreground">—</span>
                             )}
@@ -753,7 +909,7 @@ export default function ValidationsPage() {
                         <TableCell className="text-right font-semibold tabular-nums">
                           {formatCurrency(isNaN(totals) ? 0 : totals, 'BRL')}
                         </TableCell>
-                        <TableCell colSpan={5}></TableCell>
+                        <TableCell colSpan={7}></TableCell>
                       </TableRow>
                     </TableFooter>
                   </Table>
@@ -801,6 +957,31 @@ export default function ValidationsPage() {
               className="bg-destructive hover:bg-destructive/90"
             >
               {rejectMutation.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : null}
+              Confirmar cancelamento
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Confirmação: cancelar aprovação (admin) */}
+      <AlertDialog open={!!cancelApprovedId} onOpenChange={(open) => !open && setCancelApprovedId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cancelar aprovação</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta ação é exclusiva para admins e converterá a validação aprovada em rejeitada.
+              O impacto financeiro será contabilizado no mês da validação.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Voltar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleAdminCancelApproval}
+              className="bg-destructive hover:bg-destructive/90"
+            >
+              {adminCancelApprovalMutation.isPending ? (
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
               ) : null}
               Confirmar cancelamento

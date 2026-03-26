@@ -42,6 +42,11 @@ class ExpenseStatus(str, enum.Enum):
     MIGRATED = "migrated"
 
 
+class ReviewStatus(str, enum.Enum):
+    NORMAL = "normal"
+    REVIEW = "review"
+
+
 class Expense(Base, BaseModel):
     __tablename__ = "expenses"
 
@@ -98,6 +103,11 @@ class Expense(Base, BaseModel):
         Enum(ExpenseStatus, values_callable=lambda x: [e.value for e in x]),
         nullable=False,
         default=ExpenseStatus.DRAFT,
+    )
+    review_status = Column(
+        Enum(ReviewStatus, values_callable=lambda x: [e.value for e in x]),
+        nullable=False,
+        default=ReviewStatus.NORMAL,
     )
     cancellation_month = Column(Date, nullable=True)  # Primeiro dia do mês em que foi cancelada
     charged_when_cancelled = Column(Boolean, nullable=True)  # True = valor do mês conta no dashboard

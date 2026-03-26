@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict
 
-from app.models.expense import ExpenseType, Currency, Periodicity, PaymentMethod, ExpenseStatus
+from app.models.expense import ExpenseType, Currency, Periodicity, PaymentMethod, ExpenseStatus, ReviewStatus
 from app.models.expense_validation import ValidationStatus
 
 
@@ -59,6 +59,7 @@ class ExpenseUpdate(BaseModel):
     password: str | None = None
     notes: str | None = None
     status: ExpenseStatus | None = None
+    review_status: ReviewStatus | None = None
 
 
 class ExpenseResponse(BaseModel):
@@ -90,6 +91,7 @@ class ExpenseResponse(BaseModel):
     password: str | None
     notes: str | None
     status: ExpenseStatus
+    review_status: ReviewStatus
     cancellation_month: date | None = None
     charged_when_cancelled: bool | None = None
     created_by_id: UUID | None = None

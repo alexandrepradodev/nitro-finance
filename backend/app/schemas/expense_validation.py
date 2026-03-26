@@ -79,6 +79,7 @@ class ExpenseBasic(BaseModel):
     currency: str
     value_brl: Decimal
     status: str
+    review_status: str = "normal"
     department_id: UUID
     company: Optional[CompanyBasic] = None
     department: Optional[DepartmentBasic] = None

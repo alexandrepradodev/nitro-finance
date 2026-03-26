@@ -243,6 +243,30 @@ def reject_validation(
         )
 
 
+@router.post("/{validation_id}/admin-cancel-approval", response_model=ExpenseValidationResponse)
+def admin_cancel_approval(
+    validation_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(admin_only),
+):
+    """
+    Admin: cancela uma aprovação feita por engano.
+    Converte APPROVED -> REJECTED e aplica impacto financeiro no mês da validação.
+    """
+    try:
+        validation = expense_validation_service.admin_cancel_approved_validation(
+            db=db,
+            validation_id=validation_id,
+            validator_id=current_user.id,
+        )
+        return validation
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+
 @router.post("/mark-overdue", status_code=status.HTTP_200_OK)
 def mark_overdue_validations_endpoint(
     db: Session = Depends(get_db),

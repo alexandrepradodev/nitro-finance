@@ -12,7 +12,7 @@ from app.models.user import User, UserRole
 from app.models.alert import Alert, AlertStatus
 from app.models.expense_validation import ExpenseValidation, ValidationStatus
 from app.models.expense import Expense
-from app.services import dashboard_service
+from app.services import dashboard_service, expense_validation_service
 from app.schemas.dashboard import (
     DashboardStatsResponse,
     CategoryExpenseResponse,
@@ -62,37 +62,23 @@ def get_dashboard_stats(
     """Retorna estatísticas gerais do dashboard"""
     validate_dashboard_filters(current_user, company_id, department_id)
     stats = dashboard_service.get_dashboard_stats(db, current_user, company_id, department_id, month)
-    
-    # Calcular validações pendentes (respeitando filtro de empresa)
-    user_role = role_value(current_user.role)
-    if user_role in (UserRole.SYSTEM_ADMIN.value, UserRole.FINANCE_ADMIN.value):
-        validation_filters = [ExpenseValidation.status == ValidationStatus.PENDING]
-        if company_id:
-            validation_filters.append(Expense.company_id == company_id)
-        if department_id:
-            validation_filters.append(Expense.department_id == department_id)
-        pending_validations = db.query(func.count(ExpenseValidation.id)).join(
-            Expense, ExpenseValidation.expense_id == Expense.id
-        ).filter(and_(*validation_filters)).scalar() or 0
-    elif user_role == UserRole.LEADER.value:
-        company_ids = [c.id for c in current_user.companies] if current_user.companies else []
-        if company_ids:
-            validation_filters = [
-                ExpenseValidation.status == ValidationStatus.PENDING,
-                Expense.owner_id == current_user.id,
-                Expense.company_id.in_(company_ids),
-            ]
-            if company_id:
-                validation_filters.append(Expense.company_id == company_id)
-            if department_id:
-                validation_filters.append(Expense.department_id == department_id)
-            pending_validations = db.query(func.count(ExpenseValidation.id)).join(
-                Expense, ExpenseValidation.expense_id == Expense.id
-            ).filter(and_(*validation_filters)).scalar() or 0
-        else:
-            pending_validations = 0
-    else:
-        pending_validations = 0
+
+    # Calcular validações pendentes usando a mesma regra de escopo da tela de validações
+    month_date: date | None = None
+    if month:
+        try:
+            year, month_num = month.split('-')
+            month_date = date(int(year), int(month_num), 1)
+        except (ValueError, IndexError):
+            month_date = None
+
+    pending_validations_query = expense_validation_service.get_pending(
+        db,
+        month=month_date,
+        current_user=current_user,
+    )
+    pending_validations = len(pending_validations_query)
+    overdue_validations = sum(1 for validation in pending_validations_query if validation.is_overdue)
     
     # Calcular alertas não lidos (respeitando filtro de empresa)
     if company_id:
@@ -115,6 +101,7 @@ def get_dashboard_stats(
     
     # Atualizar stats com valores calculados
     stats.pending_validations = pending_validations
+    stats.overdue_validations = overdue_validations
     stats.unread_alerts = unread_alerts
     
     return stats
@@ -172,6 +159,7 @@ def get_expenses_by_department(
 def get_expenses_timeline(
     company_id: UUID | None = Query(None, description="Filtrar por empresa"),
     department_id: UUID | None = Query(None, description="Filtrar por setor"),
+    month: str | None = Query(None, description="Mês âncora da timeline (formato YYYY-MM)"),
     months: int = Query(6, ge=1, le=12, description="Número de meses"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -179,7 +167,7 @@ def get_expenses_timeline(
     """Retorna dados de evolução de gastos ao longo do tempo"""
     validate_dashboard_filters(current_user, company_id, department_id)
     return dashboard_service.get_expenses_timeline(
-        db, current_user, company_id, department_id, months
+        db, current_user, company_id, department_id, months, month
     )
 
 
