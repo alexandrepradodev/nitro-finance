@@ -44,6 +44,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useToast } from '@/hooks/use-toast';
 import { formatCurrency, formatMonth, formatDate } from '@/lib/formatters';
 import type { ValidationStatus, ExpenseValidation } from '@/types';
@@ -156,6 +157,13 @@ export default function ValidationsPage() {
     queryKey: ['departments'],
     queryFn: () => departmentsApi.getAll(),
   });
+
+  const filteredDepartments = useMemo(() => {
+    if (!filters.company_id) return [];
+    return (departments ?? []).filter(
+      (department) => department.is_active && department.company_id === filters.company_id
+    );
+  }, [departments, filters.company_id]);
 
   // Detectar se é mês futuro
   const isFutureMonth = (() => {
@@ -329,7 +337,7 @@ export default function ValidationsPage() {
 
   const handleCompanyChange = (value: string) => {
     const companyId = value === 'all' ? undefined : value;
-    setFilters({ ...filters, company_id: companyId });
+    setFilters({ ...filters, company_id: companyId, department_id: undefined });
   };
 
   const handleOwnerChange = (value: string) => {
@@ -502,17 +510,39 @@ export default function ValidationsPage() {
               <Select
                 value={filters.department_id ?? 'all'}
                 onValueChange={handleDepartmentChange}
+                disabled={!filters.company_id}
               >
-                <SelectTrigger className="h-9 w-[200px]">
-                  <SelectValue placeholder="Setor" />
-                </SelectTrigger>
+                {!filters.company_id ? (
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="inline-block">
+                          <SelectTrigger className="h-9 w-[200px]" disabled>
+                            <SelectValue placeholder="Selecione uma empresa primeiro" />
+                          </SelectTrigger>
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        Selecione uma empresa primeiro
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                ) : (
+                  <SelectTrigger className="h-9 w-[200px]">
+                    <SelectValue placeholder="Setor" />
+                  </SelectTrigger>
+                )}
                 <SelectContent>
-                  <SelectItem value="all">Todos os setores</SelectItem>
-                  {departments?.filter((d) => d.is_active)?.map((department) => (
-                    <SelectItem key={department.id} value={department.id}>
-                      {department.name}
-                    </SelectItem>
-                  ))}
+                  {filters.company_id ? (
+                    <>
+                      <SelectItem value="all">Todos os setores</SelectItem>
+                      {filteredDepartments.map((department) => (
+                        <SelectItem key={department.id} value={department.id}>
+                          {department.name}
+                        </SelectItem>
+                      ))}
+                    </>
+                  ) : null}
                 </SelectContent>
               </Select>
             </div>

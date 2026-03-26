@@ -27,7 +27,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { formatCurrency, formatDate, formatMonth, getStatusBadgeVariant, getStatusLabel, getAlertTypeIcon } from '@/lib/formatters';
+import { formatCurrency, formatMonth, getStatusBadgeVariant, getStatusLabel } from '@/lib/formatters';
 import { Link } from 'react-router-dom';
 import type { DashboardFilters, Currency } from '@/types';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
@@ -141,11 +141,6 @@ export default function DashboardPage() {
   const { data: recentExpenses, isLoading: expensesLoading } = useQuery({
     queryKey: ['recent-expenses', filters],
     queryFn: () => dashboardApi.getRecentExpenses(5, filters),
-  });
-
-  const { data: recentAlerts, isLoading: alertsLoading } = useQuery({
-    queryKey: ['recent-alerts'],
-    queryFn: () => dashboardApi.getRecentAlerts(5),
   });
 
   const hasActiveFilters = !!(
@@ -437,7 +432,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Recent Data */}
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-6">
         {/* Recent Expenses */}
         <Card className="border-border/60 bg-card/70 backdrop-blur-sm">
           <CardHeader className="flex flex-row items-center justify-between">
@@ -480,60 +475,6 @@ export default function DashboardPage() {
                     </div>
                   </div>
                 ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Recent Alerts */}
-        <Card className="border-border/60 bg-card/70 backdrop-blur-sm">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-lg">Alertas Recentes</CardTitle>
-            <Link to="/alerts" className="text-sm text-primary hover:underline">
-              Ver todos
-            </Link>
-          </CardHeader>
-          <CardContent>
-            {alertsLoading ? (
-              <div className="space-y-3">
-                {[...Array(5)].map((_, i) => (
-                  <Skeleton key={i} className="h-12 w-full" />
-                ))}
-              </div>
-            ) : recentAlerts?.length === 0 ? (
-              <p className="text-muted-foreground text-center py-8">
-                Nenhum alerta encontrado
-              </p>
-            ) : (
-              <div className="space-y-3">
-                {recentAlerts?.map((alert) => {
-                  const AlertIcon = getAlertTypeIcon(alert.alert_type);
-                  return (
-                    <div
-                      key={alert.id}
-                      className={`flex items-start gap-3 p-3 rounded-lg transition-colors ${
-                        alert.status === 'pending' ? 'bg-warning-light' : 'bg-muted/50'
-                      }`}
-                    >
-                      <div className={`p-2 rounded-lg ${
-                        alert.status === 'pending' ? 'bg-warning/10' : 'bg-muted'
-                      }`}>
-                        <AlertIcon className={`h-4 w-4 ${
-                          alert.status === 'pending' ? 'text-warning' : 'text-muted-foreground'
-                        }`} />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="font-medium text-sm">{alert.title}</p>
-                        <p className="text-xs text-muted-foreground truncate">
-                          {alert.message}
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {formatDate(alert.created_at)}
-                        </p>
-                      </div>
-                    </div>
-                  );
-                })}
               </div>
             )}
           </CardContent>
