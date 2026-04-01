@@ -154,6 +154,12 @@ export interface ExpenseValidation {
   validator?: User; // Usuário que validou (se validator_id estiver preenchido)
 }
 
+export interface CreateMonthlyValidationsResponse {
+  message: string;
+  count: number;
+  month: string; // YYYY-MM-DD
+}
+
 // Alert Types (backend)
 export type AlertType = 'validation_pending' | 'validation_overdue' | 'renewal_upcoming' | 'renewal_due' | 'expense_cancellation';
 export type AlertStatus = 'pending' | 'sent' | 'failed' | 'read';

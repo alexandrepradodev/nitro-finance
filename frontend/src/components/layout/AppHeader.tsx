@@ -1,6 +1,9 @@
-import { LogOut, ChevronDown, Sun, Moon } from 'lucide-react';
+import { LogOut, ChevronDown, Sun, Moon, RefreshCw } from 'lucide-react';
+import { useState } from 'react';
 import { useTheme } from 'next-themes';
 import { useAuth } from '@/contexts/AuthContext';
+import { validationsApi } from '@/services/api';
+import { useToast } from '@/hooks/use-toast';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
   DropdownMenu,
@@ -18,6 +21,8 @@ export function AppHeader() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const { theme, setTheme } = useTheme();
+  const { toast } = useToast();
+  const [isCreatingMonthlyValidations, setIsCreatingMonthlyValidations] = useState(false);
 
   const handleLogout = () => {
     logout();
@@ -27,6 +32,30 @@ export function AppHeader() {
   if (!user) return null;
 
   const roleLabel = getRoleLabel(user.role);
+  const isAdmin = user.role === 'system_admin' || user.role === 'finance_admin';
+
+  const handleCreateMonthlyValidations = async () => {
+    if (isCreatingMonthlyValidations) return;
+
+    setIsCreatingMonthlyValidations(true);
+    try {
+      const result = await validationsApi.createMonthly();
+      toast({
+        title: 'Validações mensais processadas',
+        description: `${result.count} validações criadas para ${result.month.slice(0, 7)}.`,
+      });
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error ? error.message : 'Não foi possível criar validações mensais.';
+      toast({
+        title: 'Erro ao criar validações',
+        description: message,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsCreatingMonthlyValidations(false);
+    }
+  };
 
   return (
     <header className="sticky top-0 z-40 w-full border-b border-border/50 bg-card/80 backdrop-blur-xl">
@@ -81,6 +110,17 @@ export function AppHeader() {
               {roleLabel}
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
+            {isAdmin && (
+              <DropdownMenuItem
+                onClick={handleCreateMonthlyValidations}
+                disabled={isCreatingMonthlyValidations}
+                className="cursor-pointer"
+              >
+                <RefreshCw className={`mr-2 h-4 w-4 ${isCreatingMonthlyValidations ? 'animate-spin' : ''}`} />
+                <span>{isCreatingMonthlyValidations ? 'Criando validações...' : 'Criar validações do mês'}</span>
+              </DropdownMenuItem>
+            )}
+            {isAdmin && <DropdownMenuSeparator />}
             <DropdownMenuItem
               onClick={handleLogout}
               className="text-destructive focus:text-destructive cursor-pointer"

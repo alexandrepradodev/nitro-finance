@@ -33,6 +33,7 @@ import type {
   TopExpenseResponse,
   StatusDistributionResponse,
   UpcomingRenewalsResponse,
+  CreateMonthlyValidationsResponse,
 } from '@/types';
 
 // Auth API
@@ -574,6 +575,21 @@ export const validationsApi = {
       throw new Error('Validation not found');
     }
     const { data } = await apiClient.post<ExpenseValidation>(`/expense-validations/${id}/admin-cancel-approval`);
+    return data;
+  },
+
+  createMonthly: async (): Promise<CreateMonthlyValidationsResponse> => {
+    if (USE_MOCK) {
+      await delay();
+      const now = new Date();
+      const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+      return {
+        message: `0 validações criadas para o mês ${month.slice(0, 7)}`,
+        count: 0,
+        month,
+      };
+    }
+    const { data } = await apiClient.post<CreateMonthlyValidationsResponse>('/expense-validations/create-monthly');
     return data;
   },
 };
