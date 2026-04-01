@@ -12,7 +12,6 @@ import {
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import {
   Sheet,
   SheetContent,
@@ -72,9 +71,6 @@ function SidebarContent({ isCollapsed, onItemClick }: { isCollapsed: boolean; on
                 <span className="text-primary">Nitro</span>
                 <span className="text-muted-foreground">Subs</span>
               </span>
-              <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 font-semibold">
-                Beta
-              </Badge>
             </div>
           )}
         </Link>
