@@ -856,28 +856,30 @@ export default function ValidationsPage() {
                             {validation.status === 'pending' && !validation.is_predicted && validation.id ? (
                               <div className="flex gap-2">
                                 <Button
-                                  size="sm"
+                                  size="icon"
                                   onClick={() => handleApprove(validation.id!)}
                                   disabled={approveMutation.isPending}
                                   className="bg-success hover:bg-success/90 text-success-foreground"
+                                  aria-label="Aprovar validação"
+                                  title="Aprovar"
                                 >
                                   {approveMutation.isPending &&
                                   approveMutation.variables === validation.id ? (
-                                    <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                                    <Loader2 className="h-4 w-4 animate-spin" />
                                   ) : (
-                                    <CheckCircle2 className="h-3 w-3 mr-1" />
+                                    <CheckCircle2 className="h-4 w-4" />
                                   )}
-                                  Aprovar
                                 </Button>
                                 <Button
-                                  size="sm"
+                                  size="icon"
                                   variant="outline"
                                   onClick={() => openRejectQuestion(validation.id!)}
                                   disabled={rejectMutation.isPending}
                                   className="border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                                  aria-label="Rejeitar validação"
+                                  title="Rejeitar"
                                 >
-                                  <XCircle className="h-3 w-3 mr-1" />
-                                  Cancelar
+                                  <XCircle className="h-4 w-4" />
                                 </Button>
                               </div>
                             ) : validation.status === 'approved' &&

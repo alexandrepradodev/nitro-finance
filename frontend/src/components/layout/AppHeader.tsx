@@ -1,4 +1,4 @@
-import { LogOut, ChevronDown, Sun, Moon, RefreshCw } from 'lucide-react';
+import { LogOut, ChevronDown, Sun, Moon, RefreshCw, Menu } from 'lucide-react';
 import { useState } from 'react';
 import { useTheme } from 'next-themes';
 import { useAuth } from '@/contexts/AuthContext';
@@ -17,7 +17,12 @@ import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
 import { getRoleLabel } from '@/lib/formatters';
 
-export function AppHeader() {
+type AppHeaderProps = {
+  isSidebarCollapsed: boolean;
+  onToggleSidebar: () => void;
+};
+
+export function AppHeader({ isSidebarCollapsed, onToggleSidebar }: AppHeaderProps) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const { theme, setTheme } = useTheme();
@@ -59,7 +64,19 @@ export function AppHeader() {
 
   return (
     <header className="sticky top-0 z-40 w-full border-b border-border/50 bg-card/80 backdrop-blur-xl">
-      <div className="flex h-14 items-center justify-end gap-2 px-4 md:px-8">
+      <div className="flex h-14 items-center justify-between gap-2 px-4 md:px-8">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onToggleSidebar}
+          className="hidden md:inline-flex h-9 w-9 rounded-lg hover:bg-muted"
+          aria-label={isSidebarCollapsed ? 'Abrir menu lateral' : 'Fechar menu lateral'}
+          title={isSidebarCollapsed ? 'Abrir menu lateral' : 'Fechar menu lateral'}
+        >
+          <Menu className="h-5 w-5" />
+        </Button>
+
+        <div className="flex items-center gap-2">
         <Button
           variant="ghost"
           size="icon"
@@ -130,6 +147,7 @@ export function AppHeader() {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        </div>
       </div>
     </header>
   );

@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -8,13 +7,11 @@ import {
   FolderTree,
   Tag,
   Users,
-  ChevronLeft,
   Menu,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import {
   Sheet,
   SheetContent,
@@ -74,9 +71,6 @@ function SidebarContent({ isCollapsed, onItemClick }: { isCollapsed: boolean; on
                 <span className="text-primary">Nitro</span>
                 <span className="text-muted-foreground">Subs</span>
               </span>
-              <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 font-semibold">
-                Beta
-              </Badge>
             </div>
           )}
         </Link>
@@ -116,8 +110,11 @@ function SidebarContent({ isCollapsed, onItemClick }: { isCollapsed: boolean; on
   );
 }
 
-export function AppSidebar() {
-  const [isCollapsed, setIsCollapsed] = useState(false);
+type AppSidebarProps = {
+  isCollapsed: boolean;
+};
+
+export function AppSidebar({ isCollapsed }: AppSidebarProps) {
   const isMobile = useIsMobile();
 
   if (isMobile) {
@@ -143,16 +140,6 @@ export function AppSidebar() {
       )}
     >
       <SidebarContent isCollapsed={isCollapsed} />
-      
-      {/* Collapse toggle */}
-      <Button
-        variant="ghost"
-        size="icon"
-        onClick={() => setIsCollapsed(!isCollapsed)}
-        className="absolute -right-3 top-20 h-6 w-6 rounded-full border border-border/50 bg-card shadow-sm hover:shadow-md transition-shadow"
-      >
-        <ChevronLeft className={cn('h-3 w-3 transition-transform', isCollapsed && 'rotate-180')} />
-      </Button>
     </aside>
   );
 }
